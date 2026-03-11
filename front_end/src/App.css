@@ -40,3 +40,28 @@
 .read-the-docs {
   color: #888;
 }
+/* Hiệu ứng mượt mà cho danh sách kết quả */
+.results-container {
+  transition: all 0.5s ease-in-out;
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.results-container.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Hiệu ứng Spin cho loader */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

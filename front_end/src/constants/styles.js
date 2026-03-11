@@ -198,4 +198,37 @@ export const styles = {
     fontSize: "13px",
     fontFamily: "monospace",
   },
+  skeletonLoader: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "15px",
+    padding: "20px 0",
+  },
+  skeletonItem: {
+    height: "100px",
+    width: "100%",
+    backgroundColor: "#f1f5f9",
+    borderRadius: "12px",
+    // Nếu có thể, hãy thêm class 'animate-pulse' trong CSS global
+  },
+  emptyState: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "80px 0",
+    color: "#94a3b8",
+    backgroundColor: "#fafafa",
+    borderRadius: "12px",
+    border: "1px dashed #e2e8f0",
+    marginTop: "20px",
+  },
+  hints: {
+    marginTop: "12px",
+    fontSize: "0.85rem",
+    color: "#94a3b8",
+    backgroundColor: "#f8fafc",
+    padding: "4px 12px",
+    borderRadius: "20px",
+  },
 };
