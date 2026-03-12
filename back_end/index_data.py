@@ -13,7 +13,6 @@ def create_vattu_index(excel_path, index_dir="vattu_index"):
     # 2. Định nghĩa cấu trúc dữ liệu cho Whoosh (Đã thêm ma_erp)
     schema = Schema(
         ma_vattu=ID(stored=True),
-        ma_erp=ID(stored=True),       # Trường mới để lưu mã ERP
         ten_vattu=TEXT(stored=True),
         thong_so=TEXT(stored=True),
         all_text=TEXT(stored=True)
@@ -41,7 +40,6 @@ def create_vattu_index(excel_path, index_dir="vattu_index"):
         
         writer.add_document(
             ma_vattu=str(row['ma_vattu']),
-            ma_erp=str(row['ma_erp']),     # Lưu mã ERP vào trường riêng
             ten_vattu=str(row['ten_vattu']),
             thong_so=str(row['thong_so']),
             all_text=full_info

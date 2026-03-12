@@ -30,12 +30,6 @@ const ResultCard = ({ item, index }) => (
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
         <span style={styles.label}>
-          <ShieldCheck size={12} /> Mã ERP
-        </span>
-        <code style={styles.code}>{item.erp || "---"}</code>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        <span style={styles.label}>
           <Box size={12} /> Đơn vị tính
         </span>
         <span style={{ fontSize: "14px", fontWeight: "600" }}>{item.dvt}</span>
@@ -46,6 +40,14 @@ const ResultCard = ({ item, index }) => (
         </span>
         <span style={{ fontSize: "14px", fontWeight: "600" }}>
           {item.hang || "N/A"}
+        </span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+        <span style={styles.label}>
+          <Factory size={12} /> Ghi chú
+        </span>
+        <span style={{ fontSize: "14px", fontWeight: "600" }}>
+          {item.note || "N/A"}
         </span>
       </div>
     </div>

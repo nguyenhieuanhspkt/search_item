@@ -7,7 +7,7 @@ import shutil
 import io
 from whoosh.index import create_in, open_dir
 from whoosh.fields import Schema, TEXT, ID
-from engine import HybridSearchEngine 
+from .engine import HybridSearchEngine 
 
 app = FastAPI()
 
@@ -61,11 +61,11 @@ def sync_build_index(df: pd.DataFrame):
         # Định nghĩa Schema khớp với Engine
         schema = Schema(
             ma_vattu=ID(stored=True),
-            ma_erp=ID(stored=True),
             ten_vattu=TEXT(stored=True),
             thong_so=TEXT(stored=True),
             hang_sx=TEXT(stored=True),
             dvt=TEXT(stored=True),
+            note=TEXT(stored=True),
             all_text=TEXT(stored=True)
         )
 
@@ -92,18 +92,18 @@ def sync_build_index(df: pd.DataFrame):
             ts = clean(row.get('Mã hiệu/Thông số kỹ thuật', ''))
             hang = clean(row.get('Hãng sản xuất', ''))
             dvt = clean(row.get('ĐVT', ''))
-            erp = clean(row.get('Ghi chú', '')) # Ghi chú chứa mã ERP
+            note = clean(row.get('Ghi chú', '')) # Ghi chú chứa note
 
             # Gom text để AI tìm kiếm
-            full_info = f"{ten} {ts} {hang} {ma} {erp}"
+            full_info = f"{ma} {ten} {ts} {hang} {note}"
             
             writer.add_document(
                 ma_vattu=ma,
-                ma_erp=erp,
                 ten_vattu=ten,
                 thong_so=ts,
                 hang_sx=hang,
                 dvt=dvt if dvt else "Cái",
+                note=note,
                 all_text=full_info
             )
         
@@ -141,11 +141,11 @@ async def search_api(query: str = Form(...)):
     return [
         {
             "ma": r.get('ma', ''),
-            "erp": r.get('erp', ''),
             "ten": r.get('ten', ''),
             "ts": r.get('ts', ''),
             "hang": r.get('hang', ''), # Đã đồng bộ key 'hang' với engine
             "dvt": r.get('dvt', 'N/A'),
+            "note": r.get('note', ''),
             "final_score": float(r.get('final_score', 0)),
             "ai_relevance": float(r.get('ai_relevance', 0))
         } for r in results

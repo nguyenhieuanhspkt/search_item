@@ -48,11 +48,11 @@ class HybridSearchEngine:
             for hit in results:
                 candidates.append({
                     "ma": hit.get('ma_vattu', ''),
-                    "erp": hit.get('ma_erp', ''),
                     "ten": hit.get('ten_vattu', ''),
                     "ts": hit.get('thong_so', ''),
                     "hang": hit.get('hang_sx', ''), # Quan trọng: lấy field này
                     "dvt": hit.get('dvt', 'N/A'),   # Quan trọng: lấy field này
+                    "note": hit.get('note', ''),
                     "all_text": hit.get('all_text', ''),
                     "w_score": hit.score # Điểm từ khóa của Whoosh
                 })
