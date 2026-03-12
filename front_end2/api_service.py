@@ -1,6 +1,6 @@
 import requests
 
-API_BASE = "http://localhost:8000"
+API_BASE = "http://10.156.43.63:8000"
 
 def get_system_status():
     try:

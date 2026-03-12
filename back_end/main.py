@@ -7,7 +7,7 @@ import shutil
 import io
 from whoosh.index import create_in, open_dir
 from whoosh.fields import Schema, TEXT, ID
-from .engine import HybridSearchEngine 
+from engine import HybridSearchEngine 
 
 app = FastAPI()
 

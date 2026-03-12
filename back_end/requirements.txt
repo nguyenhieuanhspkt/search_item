@@ -4,3 +4,4 @@ numpy
 whoosh
 sentence-transformers
 torch
+python-multipart
