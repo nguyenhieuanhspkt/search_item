@@ -4,7 +4,7 @@ import os
 import shutil
 import io
 from docx import Document  # Thư viện xử lý file Word
-from engine import HybridSearchEngine
+from search_item.back_end.core.engine import HybridSearchEngine
 from whoosh.index import create_in
 from whoosh.fields import Schema, TEXT, ID
 

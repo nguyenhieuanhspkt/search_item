@@ -7,8 +7,10 @@ import shutil
 import io
 from whoosh.index import create_in, open_dir
 from whoosh.fields import Schema, TEXT, ID
-from .engine import HybridSearchEngine 
-
+from .core.engine import HybridSearchEngine 
+from .core.bulk_processor import BulkMatcher
+from pydantic import BaseModel
+from typing import List, Optional
 app = FastAPI()
 
 # --- 1. CẤU HÌNH ---
@@ -16,8 +18,9 @@ ADMIN_PASSWORD = "admin123"
 INDEX_DIR = "vattu_index"
 MODEL_PATH = 'keepitreal/vietnamese-sbert'
 
-# Biến toàn cục để quản lý trạng thái
+# Biến toàn cục
 engine = None
+bulk_matcher = None # Thêm biến này
 is_model_loaded = False
 current_progress = {"percent": 0, "task": "Idle"}
 
@@ -33,20 +36,22 @@ app.add_middleware(
 # --- 3. SỰ KIỆN STARTUP ---
 @app.on_event("startup")
 async def load_ai():
-    global engine, is_model_loaded
+    global engine, bulk_matcher, is_model_loaded
     print("--- Đang khởi động hệ thống AI... ---")
     
     def init():
-        # Kiểm tra xem đã có index chưa để nạp engine ngay
-        if os.path.exists(INDEX_DIR) and len(os.listdir(INDEX_DIR)) > 0:
-            return HybridSearchEngine(MODEL_PATH, INDEX_DIR)
-        return None
+        # Ưu tiên load model local BGE nếu có
+        path = MODEL_PATH if os.path.exists(MODEL_PATH) else 'keepitreal/vietnamese-sbert'
+        eg = HybridSearchEngine(path, INDEX_DIR)
+        bm = BulkMatcher(eg) # Khởi tạo luôn BulkMatcher dùng chung engine
+        return eg, bm
     
     # Nạp model ngầm để không chặn startup
     loop = asyncio.get_event_loop()
-    engine = await loop.run_in_executor(None, init)
+    # Chạy init trong executor để không block server startup
+    engine, bulk_matcher = await loop.run_in_executor(None, init)
     is_model_loaded = True
-    print("--- Hệ thống AI đã sẵn sàng! ---")
+    print(f"--- Hệ thống AI ({MODEL_PATH}) đã sẵn sàng! ---")
 
 # --- 4. LOGIC XỬ LÝ INDEX (CHẠY NGẦM) ---
 def sync_build_index(df: pd.DataFrame):
@@ -109,10 +114,10 @@ def sync_build_index(df: pd.DataFrame):
         
         current_progress = {"percent": 90, "task": "Đang tối ưu hóa tìm kiếm..."}
         writer.commit()
-
-        # Quan trọng: Làm mới Engine sau khi có dữ liệu mới
+        global bulk_matcher
         engine = HybridSearchEngine(MODEL_PATH, INDEX_DIR)
-        
+        bulk_matcher = BulkMatcher(engine) # Cập nhật cả bulk_matcher khi index thay đổi
+         
         current_progress = {"percent": 100, "task": "Hoàn tất"}
         
     except Exception as e:
@@ -173,3 +178,28 @@ async def upload_excel(
 @app.get("/admin/progress")
 async def get_progress():
     return current_progress
+
+engine = HybridSearchEngine()
+bulk_matcher = BulkMatcher(engine)
+class MaterialInput(BaseModel):
+    stt: Optional[str] = None
+    ten: str
+    tskt: Optional[str] = ""
+    dvt: Optional[str] = ""
+# 2. Sửa lại API nhận dữ liệu
+@app.post("/api/bulk-match")
+async def handle_bulk_match(items: List[MaterialInput]): # <--- Dùng List[MaterialInput] thay vì list
+    if not is_model_loaded or bulk_matcher is None:
+        return {"status": "error", "message": "Hệ thống AI đang khởi động..."}
+    
+    try:
+        # Chuyển đổi List Pydantic sang List Dict để bulk_matcher xử lý
+        input_data = [item.dict() for item in items]
+        results = bulk_matcher.process_data(input_data)
+        return {
+            "status": "success",
+            "total": len(results),
+            "data": results
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
