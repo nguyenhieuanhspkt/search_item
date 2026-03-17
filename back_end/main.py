@@ -1,32 +1,40 @@
-from fastapi import FastAPI, Form, File, UploadFile, BackgroundTasks
+from fastapi import FastAPI, Form, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import os
-import asyncio
-import pandas as pd
+import sys
 import shutil
 import io
+import asyncio
+import pandas as pd
 from docx import Document
 from typing import List, Optional
 from pydantic import BaseModel
 
-# Giả định các module này bạn đã có sẵn trong thư mục core
-# from .core.engine import HybridSearchEngine 
-# from .core.bulk_processor import BulkMatcher
+# --- 1. SETUP ĐƯỜNG DẪN VÀ IMPORT ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
 
-app = FastAPI()
+try:
+    from core.engine import HybridSearchEngine 
+    from core.bulk_processor import BulkMatcher
+except ImportError as e:
+    print(f"⚠️ Lỗi nghiêm trọng: Không tìm thấy thư mục core hoặc thiếu file: {e}")
+    HybridSearchEngine = None
+    BulkMatcher = None
 
-# --- 1. CẤU HÌNH ---
+app = FastAPI(title="Hệ thống Thẩm định Vật tư v2.6")
+
+# --- 2. CẤU HÌNH HỆ THỐNG ---
+INDEX_DIR = os.path.join(BASE_DIR, "vattu_index")
 ADMIN_PASSWORD = "admin123"
-INDEX_DIR = "vattu_index"
-MODEL_PATH = 'keepitreal/vietnamese-sbert'
 
-# Biến toàn cục
+# Khởi tạo biến toàn cục
 engine = None
 bulk_matcher = None
 is_model_loaded = False
-current_progress = {"percent": 0, "task": "Idle"}
 
-# --- 2. MIDDLEWARE (CORS) ---
+# Cấu hình CORS cho React Frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -35,33 +43,131 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 3. MODEL DỮ LIỆU ---
+# Model dữ liệu đầu vào từ React
 class MaterialInput(BaseModel):
     stt: Optional[str] = None
     ten: str
     tskt: Optional[str] = ""
     dvt: Optional[str] = ""
 
-# --- 4. ENDPOINT: TRÍCH XUẤT FILE WORD (Dùng cho Preview) ---
+# --- 3. SỰ KIỆN KHỞI ĐỘNG (STARTUP) ---
+@app.on_event("startup")
+async def load_ai():
+    global engine, bulk_matcher, is_model_loaded
+    try:
+        if HybridSearchEngine:
+            # Khởi tạo engine ngay lập tức (Engine sẽ tự tìm BGE hoặc SBERT)
+            engine = HybridSearchEngine(index_dir=INDEX_DIR)
+            
+            # Kiểm tra nếu đã có dữ liệu index cũ thì nạp Matcher luôn
+            if os.path.exists(INDEX_DIR) and len(os.listdir(INDEX_DIR)) > 0:
+                bulk_matcher = BulkMatcher(engine=engine)
+                print(f"--- ✅ AI Sẵn sàng. Model đang dùng: {engine.current_model_name_or_path} ---")
+            else:
+                print("--- ⚠️ Hệ thống chưa có dữ liệu Index. Chờ nạp Excel... ---")
+            
+            is_model_loaded = True
+    except Exception as e:
+        print(f"--- ❌ LỖI KHỞI ĐỘNG HỆ THỐNG: {str(e)} ---")
+
+# --- 4. ENDPOINT: QUẢN TRỊ & NẠP DỮ LIỆU ---
+@app.post("/admin/rebuild-index")
+async def rebuild_index(file: UploadFile = File(...), password: str = Form(...)):
+    global engine, bulk_matcher
+    if password != ADMIN_PASSWORD:
+        return {"status": "error", "message": "Sai mật khẩu Admin"}
+    
+    temp_path = os.path.join(BASE_DIR, "temp_data.xlsx")
+    try:
+        # 1. Lưu file tạm
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # 2. Làm sạch thư mục Index
+        if os.path.exists(INDEX_DIR):
+            shutil.rmtree(INDEX_DIR)
+        os.makedirs(INDEX_DIR)
+        
+        # 3. Thực hiện xây dựng Index (Ghi file xuống đĩa)
+        print(f"--- Đang xây dựng Index từ file: {file.filename} ---")
+        
+        # Đảm bảo engine đã tồn tại
+        if engine is None:
+            engine = HybridSearchEngine(index_dir=INDEX_DIR)
+            
+        success = engine.build_and_save_index(temp_path, INDEX_DIR)
+        
+        if success:
+            # QUAN TRỌNG: Re-init để Engine nạp lại các file Index vừa tạo
+            engine.__init__(index_dir=INDEX_DIR)
+            bulk_matcher = BulkMatcher(engine=engine)
+            
+            # Xóa file Excel tạm sau khi nạp xong
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                
+            return {
+                "status": "success", 
+                "message": f"Nạp dữ liệu thành công bằng {engine.current_model_name_or_path}"
+            }
+        else:
+            return {"status": "error", "message": "Lỗi xử lý file Excel. Kiểm tra lại định dạng cột."}
+
+    except Exception as e:
+        print(f"❌ Lỗi Rebuild: {str(e)}")
+        return {"status": "error", "message": f"Lỗi hệ thống: {str(e)}"}
+
+# --- 5. ENDPOINT: TRẠNG THÁI & TÌM KIẾM ---
+@app.get("/system-status")
+async def get_status():
+    if not is_model_loaded:
+        return {"status": "loading", "message": "Đang nạp Model AI..."}
+    
+    # Kiểm tra xem folder index có file thực tế chưa
+    has_index = os.path.exists(INDEX_DIR) and len([f for f in os.listdir(INDEX_DIR) if not f.startswith('.')]) > 0
+    
+    if not has_index:
+        return {"status": "warning", "message": "Chưa có dữ liệu Index"}
+        
+    return {"status": "ready", "message": f"Sẵn sàng ({engine.current_model_name_or_path})"}
+
+@app.post("/search")
+async def search_api(query: str = Form(...)):
+    if not is_model_loaded or engine is None:
+        return {"error": "Hệ thống chưa sẵn sàng."}
+    
+    try:
+        query_str = query.strip()
+        if not query_str: return []
+
+        # Gọi hàm search lai ghép
+        results = engine.search(query_str, top_k=5)
+        
+        # Map kết quả khớp với giao diện React
+        return [{
+            "erp": r.get('ma_vattu') or r.get('ma') or '---',
+            "ten": r.get('ten_vattu') or r.get('ten', 'Không tên'),
+            "ts": r.get('thong_so') or r.get('ts', ''),
+            "hang": r.get('hang_sx') or r.get('hang', ''),
+            "dvt": r.get('dvt', 'N/A'),
+            "final_score": round(float(r.get('final_score', 0)), 2)
+        } for r in results]
+    except Exception as e:
+        return {"error": f"Lỗi tìm kiếm: {str(e)}"}
+
+# --- 6. ENDPOINT: XỬ LÝ FILE WORD & THẨM ĐỊNH HÀNG LOẠT ---
 @app.post("/extract-word")
 async def extract_word(file: UploadFile = File(...)):
-    """
-    Nhận file .docx, trả về danh sách JSON các dòng trong bảng.
-    Dùng để hiển thị Preview trên React Frontend.
-    """
     try:
         contents = await file.read()
         doc = Document(io.BytesIO(contents))
         data = []
-        
         for table in doc.tables:
-            # Duyệt từ dòng thứ 2 (bỏ qua header)
-            for row in table.rows[1:]:
+            for row in table.rows[1:]: # Bỏ qua dòng tiêu đề bảng
                 cells = row.cells
-                # Kiểm tra nếu dòng có ít nhất 2 cột (STT và Tên) và không rỗng
                 if len(cells) >= 2:
                     ten_vt = cells[1].text.strip()
-                    if ten_vt:  # Chỉ lấy nếu có tên vật tư
+                    if ten_vt:
                         data.append({
                             "stt": cells[0].text.strip(),
                             "ten": ten_vt,
@@ -70,57 +176,20 @@ async def extract_word(file: UploadFile = File(...)):
                         })
         return data
     except Exception as e:
-        return {"error": f"Không thể đọc file Word: {str(e)}"}
+        return {"error": f"Lỗi đọc file Word: {str(e)}"}
 
-# --- 5. ENDPOINT: THẨM ĐỊNH HÀNG LOẠT ---
 @app.post("/api/bulk-match")
 async def handle_bulk_match(items: List[MaterialInput]):
     if not is_model_loaded or bulk_matcher is None:
-        return {"status": "error", "message": "Hệ thống AI đang khởi động..."}
+        return {"status": "error", "message": "AI chưa sẵn sàng hoặc chưa nạp Index."}
     
     try:
         input_data = [item.dict() for item in items]
         results = bulk_matcher.process_data(input_data)
-        return {
-            "status": "success",
-            "total": len(results),
-            "data": results
-        }
+        return {"status": "success", "total": len(results), "data": results}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# --- 6. CÁC API HỆ THỐNG KHÁC ---
-
-@app.get("/system-status")
-async def get_status():
-    if not is_model_loaded:
-        return {"status": "loading", "message": "Đang tải Model AI..."}
-    if os.path.exists(INDEX_DIR) and len(os.listdir(INDEX_DIR)) > 0:
-        return {"status": "ready", "message": "Hệ thống đã sẵn sàng"}
-    return {"status": "warning", "message": "Hệ thống chưa có dữ liệu Index"}
-
-@app.post("/search")
-async def search_api(query: str = Form(...)):
-    if not is_model_loaded or engine is None:
-        return {"error": "Hệ thống chưa sẵn sàng"}
-    results = engine.search(query, top_k=5)
-    return [
-        {
-            "ma": r.get('ma', ''),
-            "ten": r.get('ten', ''),
-            "ts": r.get('ts', ''),
-            "hang": r.get('hang', ''),
-            "dvt": r.get('dvt', 'N/A'),
-            "final_score": float(r.get('final_score', 0))
-        } for r in results
-    ]
-
-# --- 7. SỰ KIỆN KHỞI ĐỘNG (STARTUP) ---
-@app.on_event("startup")
-async def load_ai():
-    global engine, bulk_matcher, is_model_loaded
-    # Lưu ý: Bạn cần import HybridSearchEngine và BulkMatcher ở đây
-    # Giả lập load model
-    await asyncio.sleep(1) 
-    is_model_loaded = True
-    print("--- Hệ thống AI đã sẵn sàng! ---")
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

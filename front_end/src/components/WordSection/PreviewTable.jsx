@@ -27,6 +27,8 @@ const PreviewTable = ({ data, isResult, loading }) => {
               <th className="px-6 py-3 font-semibold w-16 text-center">STT</th>
               <th className="px-6 py-3 font-semibold">Tên vật tư (Word)</th>
               <th className="px-6 py-3 font-semibold">Thông số kỹ thuật</th>
+              <th className="px-6 py-3 font-semibold">Đơn vị tính</th>
+
               {isResult && (
                 <>
                   <th className="px-6 py-3 font-semibold bg-blue-50/50 text-blue-600">
@@ -52,6 +54,8 @@ const PreviewTable = ({ data, isResult, loading }) => {
                   {item.ten || item.tenWord}
                 </td>
                 <td className="px-6 py-4 text-gray-500">{item.ts}</td>
+                <td className="px-6 py-4 text-gray-500">{item.dvt_word}</td>
+
                 {isResult && (
                   <>
                     <td className="px-6 py-4 text-blue-700 font-medium">

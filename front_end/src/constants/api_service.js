@@ -44,6 +44,15 @@ const api = {
       return { error: error.message };
     }
   },
+  // --- HÀM MỚI: Trích xuất file Word ---
+  extractWord: async (file) => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    // Lưu ý: Không cần set headers thủ công, axios sẽ tự nhận diện FormData
+    const response = await axios.post(`${API_BASE}/extract-word`, formData);
+    return response.data;
+  },
 };
 
 export default api;
