@@ -1,4 +1,5 @@
 // src/components/WordSection.jsx
+import { X } from "lucide-react"; // Import thêm icon X
 import React, { useState } from "react";
 import api from "../constants/api_service"; // Luôn nhớ đường dẫn này
 import axios from "axios";
@@ -10,6 +11,12 @@ const WordSection = () => {
   const [progress, setProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Hàm xóa file đã chọn
+  const removeFile = () => {
+    setFile(null);
+    setReport([]); // Tùy chọn: Xóa báo cáo cũ nếu muốn
+    setProgress(0);
+  };
   const handleStart = async () => {
     if (!file) return alert("Vui lòng chọn file .docx!");
 
@@ -71,27 +78,64 @@ const WordSection = () => {
       </div>
 
       {/* Dropzone Area */}
-      <div className="border-2 border-dashed border-gray-200 rounded-2xl p-10 bg-gray-50/50 flex flex-col items-center justify-center">
-        <input
-          type="file"
-          accept=".docx"
-          onChange={(e) => setFile(e.target.files[0])}
-          className="mb-4 text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-        />
-        <button
-          onClick={handleStart}
-          disabled={isProcessing || !file}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg disabled:bg-gray-300"
-        >
-          {isProcessing ? (
-            <Loader2 className="animate-spin" />
-          ) : (
-            <Play size={18} />
-          )}
-          {isProcessing
-            ? `Đang xử lý (${progress}%)`
-            : "Bắt đầu thẩm định hàng loạt"}
-        </button>
+      <div className="border-2 border-dashed border-gray-200 rounded-2xl p-10 bg-gray-50/50 flex flex-col items-center justify-center transition-all">
+        {!file ? (
+          // TRƯỜNG HỢP 1: CHƯA CHỌN FILE
+          <div className="flex flex-col items-center">
+            <input
+              type="file"
+              id="file-upload"
+              accept=".docx"
+              onChange={(e) => setFile(e.target.files[0])}
+              className="hidden" // Ẩn input mặc định xấu xí
+            />
+            <label
+              htmlFor="file-upload"
+              className="cursor-pointer bg-blue-50 text-blue-700 px-6 py-2 rounded-full font-semibold hover:bg-blue-100 transition-colors"
+            >
+              Chọn tệp Word (.docx)
+            </label>
+            <p className="mt-2 text-gray-400 text-sm">
+              Kéo thả hoặc click để chọn file
+            </p>
+          </div>
+        ) : (
+          // TRƯỜNG HỢP 2: ĐÃ CHỌN FILE -> HIỆN TÊN VÀ NÚT XÓA
+          <div className="w-full max-w-md">
+            <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-blue-100 shadow-sm mb-6">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <FileText className="text-blue-500 flex-shrink-0" size={24} />
+                <span className="text-sm font-medium text-gray-700 truncate">
+                  {file.name}
+                </span>
+              </div>
+
+              <button
+                onClick={removeFile}
+                disabled={isProcessing} // Không cho xóa khi đang chạy AI
+                className="p-1 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-full transition-colors disabled:opacity-30"
+                title="Xóa file"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <button
+              onClick={handleStart}
+              disabled={isProcessing}
+              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg disabled:bg-gray-300"
+            >
+              {isProcessing ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <Play size={18} fill="currentColor" />
+              )}
+              {isProcessing
+                ? `Đang xử lý (${progress}%)`
+                : "Bắt đầu thẩm định hàng loạt"}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Progress Bar */}
