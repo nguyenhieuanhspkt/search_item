@@ -203,3 +203,26 @@ async def handle_bulk_match(items: List[MaterialInput]): # <--- Dùng List[Mater
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+    
+    
+from fastapi import UploadFile, File
+from docx import Document
+import io
+
+@app.post("/extract-word")
+async def extract_word(file: UploadFile = File(...)):
+    contents = await file.read()
+    doc = Document(io.BytesIO(contents))
+    data = []
+    
+    for table in doc.tables:
+        for row in table.rows[1:]: # Bỏ qua header
+            cells = row.cells
+            if len(cells) >= 4:
+                data.append({
+                    "stt": cells[0].text.strip(),
+                    "ten": cells[1].text.strip(),
+                    "ts": cells[2].text.strip(),
+                    "dvt_word": cells[3].text.strip()
+                })
+    return data

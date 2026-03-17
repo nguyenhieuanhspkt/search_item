@@ -1,6 +1,6 @@
 import requests
 
-API_BASE = "http://10.156.43.63:8000"
+API_BASE = "http://192.168.1.221:8000"
 
 def get_system_status():
     try:
@@ -9,10 +9,15 @@ def get_system_status():
         return {"status": "error", "message": "Không thể kết nối đến Backend (Kiểm tra server)"}
 
 def search_query(text):
-    # Khớp với Form(...) trong Backend
     try:
-        response = requests.post(f"{API_BASE}/search", data={"query": text})
-        return response.json()
+        # Thêm timeout để tránh đợi vô hạn nếu server lag
+        response = requests.post(f"{API_BASE}/search", data={"query": text}, timeout=15)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"error": f"Server trả lỗi {response.status_code}"}
+    except requests.exceptions.Timeout:
+        return {"error": "Kết nối quá hạn (Timeout)"}
     except Exception as e:
         return {"error": str(e)}
 
