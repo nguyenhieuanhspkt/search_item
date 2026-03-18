@@ -1,0 +1,8 @@
+{
+  "Vật liệu chịu lửa": ["novaplast", "gạch chịu lửa", "bê tông chịu lửa", "samot", "vữa chịu nhiệt"],
+  "Cơ khí - Kim loại": ["thanh la", "thép", "inox", "mặt bích", "bulong", "sa240", "a36", "u-bolt"],
+  "Làm kín & Cách điện": ["gioăng", "seal", "tết chèn", "gasket", "phớt", "keo làm kín"],
+  "Thiết bị điện": ["mccb", "cb", "contactor", "biến áp", "cáp điện", "relay", "rơ le", "biến tần"],
+  "Hóa chất - Dầu mỡ": ["dầu", "mỡ bôi trơn", "hcl", "naoh", "axit", "sơn"],
+  "Phụ tùng Bơm/Van": ["cánh bơm", "trục bơm", "van bi", "van cửa", "gate valve", "check valve"]
+}

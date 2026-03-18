@@ -55,7 +55,9 @@ class BulkMatcher:
                     "stt": word_item['stt'],
                     "word_name": word_item['ten'],
                     "stock_name": best['ten'],
-                    "diff_html": diff_html,
+                    "dvt_he_thong": best.get('dvt'), # Thêm
+                    "chung_loai": best.get('chung_loai'), # Thêm
+                    "erp": best.get('ma'), # Thêm
                     "score": round(best['final_score'], 2),
                     "full_stock_info": best # Trả về full để hiện chi tiết nếu cần
                 })

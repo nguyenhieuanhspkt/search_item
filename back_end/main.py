@@ -142,17 +142,18 @@ async def search_api(query: str = Form(...)):
         query_str = query.strip()
         if not query_str: return []
 
-        # Gọi hàm search lai ghép
+        # Gọi hàm search từ engine
         results = engine.search(query_str, top_k=5)
         
-        # Map kết quả khớp với giao diện React
+        # Map chính xác từng trường để React nhận được
         return [{
-            "erp": r.get('ma_vattu') or r.get('ma') or '---',
-            "ten": r.get('ten_vattu') or r.get('ten', 'Không tên'),
-            "ts": r.get('thong_so') or r.get('ts', ''),
-            "hang": r.get('hang_sx') or r.get('hang', ''),
-            "dvt": r.get('dvt', 'N/A'),
-            "final_score": round(float(r.get('final_score', 0)), 2)
+            "erp": r.get('ma') or '---',
+            "matchHeThong": r.get('ten') or 'Không tên',
+            "ts": r.get('ts') or '',
+            "hang": r.get('hang') or '',
+            "dvt": r.get('dvt') or 'N/A',
+            "chung_loai": r.get('chung_loai') or 'Vật tư khác', # LẤY TRƯỜNG NÀY
+            "score": round(float(r.get('final_score', 0) * 100), 1) 
         } for r in results]
     except Exception as e:
         return {"error": f"Lỗi tìm kiếm: {str(e)}"}

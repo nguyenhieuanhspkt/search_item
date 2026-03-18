@@ -29,29 +29,38 @@ const api = {
     }
   },
 
-  // Upload file Excel (Admin)
-  uploadDatabase: async (file, password) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("password", password);
+  // --- HÀM MỚI: Thẩm định hàng loạt (Bulk Match) ---
+  // Dữ liệu truyền vào là mảng: [{stt: "1", ten: "...", tskt: "...", dvt: "..."}, ...]
+  bulkMatch: async (items) => {
     try {
-      const response = await axios.post(
-        `${API_BASE}/admin/upload-excel`,
-        formData,
-      );
-      return response.data;
+      // Gửi mảng JSON trực tiếp (không dùng FormData)
+      const response = await axios.post(`${API_BASE}/api/bulk-match`, items);
+      return response.data; // Trả về { status: 'success', data: [...] }
     } catch (error) {
-      return { error: error.message };
+      console.error("Lỗi Bulk Match:", error);
+      return { status: "error", message: error.message };
     }
   },
+
   // --- HÀM MỚI: Trích xuất file Word ---
   extractWord: async (file) => {
     const formData = new FormData();
     formData.append("file", file);
-
-    // Lưu ý: Không cần set headers thủ công, axios sẽ tự nhận diện FormData
     const response = await axios.post(`${API_BASE}/extract-word`, formData);
     return response.data;
+  },
+
+  // Rebuild Index (Dùng hàm này trong AdminSection)
+  rebuildIndex: async (file, password) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("password", password);
+    try {
+      const response = await axios.post(`${API_BASE}/admin/rebuild-index`, formData);
+      return response.data;
+    } catch (error) {
+      return { error: error.message };
+    }
   },
 };
 
