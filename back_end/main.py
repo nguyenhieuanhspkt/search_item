@@ -1,3 +1,5 @@
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fastapi import FastAPI, Form, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -189,6 +191,19 @@ async def handle_bulk_match(items: List[MaterialInput]):
         return {"status": "success", "total": len(results), "data": results}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+    
+base_path = os.path.dirname(os.path.abspath(__file__))
+dist_path = os.path.join(os.path.dirname(base_path), "front_end", "dist")
+
+if os.path.exists(dist_path):
+    # Mount thư mục dist để truy cập file static (css, js, img)
+    app.mount("/assets", StaticFiles(directory=os.path.join(dist_path, "assets")), name="assets")
+
+    # Route mặc định trả về file index.html của React
+    @app.get("/")
+    @app.get("/{full_path:path}")
+    async def serve_react(full_path: str = None):
+        return FileResponse(os.path.join(dist_path, "index.html"))
 
 if __name__ == "__main__":
     import uvicorn
