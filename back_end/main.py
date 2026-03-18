@@ -29,9 +29,10 @@ app = FastAPI(title="Hệ thống Thẩm định Vật tư v2.6")
 
 # --- 2. CẤU HÌNH HỆ THỐNG ---
 INDEX_DIR = os.path.join(BASE_DIR, "vattu_index")
+# Tìm đường dẫn model local
+MODEL_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), "AI_models", "BGE")
 ADMIN_PASSWORD = "admin123"
 
-# Khởi tạo biến toàn cục
 engine = None
 bulk_matcher = None
 is_model_loaded = False
@@ -52,21 +53,23 @@ class MaterialInput(BaseModel):
     tskt: Optional[str] = ""
     dvt: Optional[str] = ""
 
+
 # --- 3. SỰ KIỆN KHỞI ĐỘNG (STARTUP) ---
 @app.on_event("startup")
 async def load_ai():
     global engine, bulk_matcher, is_model_loaded
     try:
         if HybridSearchEngine:
-            # Khởi tạo engine ngay lập tức (Engine sẽ tự tìm BGE hoặc SBERT)
-            engine = HybridSearchEngine(index_dir=INDEX_DIR)
+            # SỬA TẠI ĐÂY: Khởi tạo theo đúng tham số của engine.py mới
+            engine = HybridSearchEngine(model_path=MODEL_PATH, index_dir=INDEX_DIR)
             
-            # Kiểm tra nếu đã có dữ liệu index cũ thì nạp Matcher luôn
-            if os.path.exists(INDEX_DIR) and len(os.listdir(INDEX_DIR)) > 0:
-                bulk_matcher = BulkMatcher(engine=engine)
-                print(f"--- ✅ AI Sẵn sàng. Model đang dùng: {engine.current_model_name_or_path} ---")
-            else:
-                print("--- ⚠️ Hệ thống chưa có dữ liệu Index. Chờ nạp Excel... ---")
+            # Kiểm tra dữ liệu index
+            if os.path.exists(INDEX_DIR) and any(os.listdir(INDEX_DIR)):
+                if BulkMatcher:
+                    bulk_matcher = BulkMatcher(engine=engine)
+                # SỬA TẠI ĐÂY: Lấy tên model từ scorers
+                model_name = engine.scorers.bi.model.get_parameter("embeddings.word_embeddings.weight").shape if hasattr(engine.scorers.bi.model, "model_card") else "BGE-M3"
+                print(f"--- ✅ AI Sẵn sàng ---")
             
             is_model_loaded = True
     except Exception as e:
@@ -81,42 +84,28 @@ async def rebuild_index(file: UploadFile = File(...), password: str = Form(...))
     
     temp_path = os.path.join(BASE_DIR, "temp_data.xlsx")
     try:
-        # 1. Lưu file tạm
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        # 2. Làm sạch thư mục Index
-        if os.path.exists(INDEX_DIR):
-            shutil.rmtree(INDEX_DIR)
-        os.makedirs(INDEX_DIR)
-        
-        # 3. Thực hiện xây dựng Index (Ghi file xuống đĩa)
-        print(f"--- Đang xây dựng Index từ file: {file.filename} ---")
-        
-        # Đảm bảo engine đã tồn tại
-        if engine is None:
-            engine = HybridSearchEngine(index_dir=INDEX_DIR)
-            
-        success = engine.build_and_save_index(temp_path, INDEX_DIR)
+        # SỬA TẠI ĐÂY: Sử dụng hàm build_and_save_index mới
+        success = engine.build_and_save_index(temp_path, overwrite=True)
         
         if success:
-            # QUAN TRỌNG: Re-init để Engine nạp lại các file Index vừa tạo
-            engine.__init__(index_dir=INDEX_DIR)
-            bulk_matcher = BulkMatcher(engine=engine)
+            # Load lại matcher sau khi nạp dữ liệu mới
+            if BulkMatcher:
+                bulk_matcher = BulkMatcher(engine=engine)
             
-            # Xóa file Excel tạm sau khi nạp xong
             if os.path.exists(temp_path):
                 os.remove(temp_path)
                 
             return {
                 "status": "success", 
-                "message": f"Nạp dữ liệu thành công bằng {engine.current_model_name_or_path}"
+                "message": "Nạp dữ liệu và phân loại chủng loại thành công!"
             }
         else:
-            return {"status": "error", "message": "Lỗi xử lý file Excel. Kiểm tra lại định dạng cột."}
+            return {"status": "error", "message": "Lỗi xử lý file Excel."}
 
     except Exception as e:
-        print(f"❌ Lỗi Rebuild: {str(e)}")
         return {"status": "error", "message": f"Lỗi hệ thống: {str(e)}"}
 
 # --- 5. ENDPOINT: TRẠNG THÁI & TÌM KIẾM ---
@@ -125,13 +114,12 @@ async def get_status():
     if not is_model_loaded:
         return {"status": "loading", "message": "Đang nạp Model AI..."}
     
-    # Kiểm tra xem folder index có file thực tế chưa
-    has_index = os.path.exists(INDEX_DIR) and len([f for f in os.listdir(INDEX_DIR) if not f.startswith('.')]) > 0
-    
+    has_index = os.path.exists(INDEX_DIR) and any(os.listdir(INDEX_DIR))
     if not has_index:
         return {"status": "warning", "message": "Chưa có dữ liệu Index"}
         
-    return {"status": "ready", "message": f"Sẵn sàng ({engine.current_model_name_or_path})"}
+    # SỬA TẠI ĐÂY: Trả về tên model từ config hoặc scorers
+    return {"status": "ready", "message": f"Sẵn sàng (BGE-M3 Local)"}
 
 @app.post("/search")
 async def search_api(query: str = Form(...)):
@@ -142,18 +130,18 @@ async def search_api(query: str = Form(...)):
         query_str = query.strip()
         if not query_str: return []
 
-        # Gọi hàm search từ engine
-        results = engine.search(query_str, top_k=5)
+        # SỬA TẠI ĐÂY: Map lại key theo cấu hình Dictionary mới của engine.py
+        results = engine.search(query_str, top_k=5, explain=True)
         
-        # Map chính xác từng trường để React nhận được
         return [{
-            "erp": r.get('ma') or '---',
-            "matchHeThong": r.get('ten') or 'Không tên',
-            "ts": r.get('ts') or '',
-            "hang": r.get('hang') or '',
+            "erp": r.get('ma_vattu') or '---',
+            "matchHeThong": r.get('ten_vattu') or 'Không tên',
+            "ts": r.get('thong_so') or '',
+            "hang": r.get('hang_sx') or '',
             "dvt": r.get('dvt') or 'N/A',
-            "chung_loai": r.get('chung_loai') or 'Vật tư khác', # LẤY TRƯỜNG NÀY
-            "score": round(float(r.get('final_score', 0) * 100), 1) 
+            "chung_loai": r.get('chung_loai') or 'Vật tư khác',
+            "score": round(float(r.get('final_score', 0) * 100), 1),
+            "explain": r.get('explain') # Thêm cái này để Frontend hiện "Tại sao"
         } for r in results]
     except Exception as e:
         return {"error": f"Lỗi tìm kiếm: {str(e)}"}

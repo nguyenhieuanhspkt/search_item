@@ -1,7 +1,7 @@
 // src/api_service.js
 import axios from "axios";
 
-const API_BASE = "http://10.156.43.54:8000";
+const API_BASE = "http://localhost:8000";
 
 const api = {
   // Kiểm tra trạng thái hệ thống
@@ -56,7 +56,10 @@ const api = {
     formData.append("file", file);
     formData.append("password", password);
     try {
-      const response = await axios.post(`${API_BASE}/admin/rebuild-index`, formData);
+      const response = await axios.post(
+        `${API_BASE}/admin/rebuild-index`,
+        formData,
+      );
       return response.data;
     } catch (error) {
       return { error: error.message };

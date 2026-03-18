@@ -1,217 +1,224 @@
+# search_item/back_end/core/engine.py
+from __future__ import annotations
+
 import os
-import numpy as np
-import re
-import torch
 import json
-import pandas as pd
-from sentence_transformers import SentenceTransformer, CrossEncoder, util
-from whoosh.index import open_dir, exists_in, create_in
-from whoosh.fields import Schema, TEXT, ID, STORED
-from whoosh.qparser import MultifieldParser, OrGroup
+import re
+from typing import List, Dict, Optional, Any
+
+import numpy as np
+import torch
+
+from .config import RankConfig
+from .helpers import (
+    clean_query_text,
+    minmax_norm,
+    normalize_bi_scores,
+    extract_all_numbers,
+    clamp01,
+)
+from .retrievers import WhooshRetriever
+from .scorers import create_scorers
+from .rules import BusinessRules
+from .ranker import HeuristicRanker
+
 
 class HybridSearchEngine:
-    def __init__(self, model_path=None, index_dir=None):
-        # 1. Xác định các đường dẫn
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        backend_dir = os.path.dirname(current_dir)
+    """
+    Nhạc trưởng điều phối Pipeline Tìm kiếm Lai (Hybrid Search):
+    Quy trình: Lexical (Whoosh) -> Semantic (Bi+Cross) -> Rules -> Ranker.
+    """
+
+    def __init__(
+        self,
+        model_path: Optional[str] = None,
+        index_dir: Optional[str] = None,
+        cfg: Optional[RankConfig] = None,
+        device: str = "cpu",
+        threads: Optional[int] = None,
+    ) -> None:
+        # 1. Khởi tạo cấu hình (Config)
+        self.cfg = cfg or RankConfig()
         
-        # Load Categories từ JSON
-        self.cat_path = os.path.join(current_dir, "categories.json")
-        self.category_data = self.load_categories()
+        # Xác định số luồng CPU tối ưu (Ưu tiên lấy từ Config)
+        num_threads = threads or getattr(self.cfg, 'set_num_threads', 4)
+
+        # 2. Thiết lập đường dẫn
+        self.current_dir = os.path.dirname(os.path.abspath(__file__))
+        backend_dir = os.path.dirname(self.current_dir)
+
+        # 3. Nạp dữ liệu Chủng loại (Categories)
+        self.cat_path = os.path.join(self.current_dir, "categories.json")
+        self.category_data = self._load_categories()
         self.category_names = list(self.category_data.keys())
-        self.cat_vectors = None
+        self._cat_vectors = None
 
-        # Cấu hình Model BGE-M3 (Ưu tiên local)
+        # 4. Cấu hình Model & Index
         local_bge_path = os.path.join(backend_dir, "AI_models", "BGE")
-        final_model = local_bge_path if os.path.exists(local_bge_path) else 'keepitreal/vietnamese-sbert'
+        final_bi_model = model_path or (local_bge_path if os.path.exists(local_bge_path) else "keepitreal/vietnamese-sbert")
         self.index_dir = index_dir or os.path.join(backend_dir, "vattu_index")
-        
-        # Tối ưu hóa CPU
-        torch.set_num_threads(4)
-        
-        try:
-            print(f"--- Đang nạp Model từ: {final_model} ---")
-            self.bi_model = SentenceTransformer(final_model, device='cpu')
-            self.cross_model = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', device='cpu')
-            
-            # Gán biến đường dẫn để main.py không bị lỗi attribute
-            self.current_model_name_or_path = final_model
-            
-            # Tính toán sẵn Vector cho các tên Chủng loại
-            if self.category_names:
-                self.cat_vectors = self.bi_model.encode(self.category_names, convert_to_tensor=True)
-            
-            print(f"--- ✅ AI Engine Ready (Mode: {self.current_model_name_or_path}) ---")
-        except Exception as e:
-            self.current_model_name_or_path = "Error"
-            print(f"--- ❌ Lỗi khởi tạo Engine: {str(e)} ---")
 
-    def load_categories(self):
-        """Đọc danh mục từ file JSON"""
+        # 5. Khởi tạo các Sub-modules (Linh kiện)
+        self.retriever = WhooshRetriever(index_dir=self.index_dir)
+        
+        # Scorers (Bi + Cross Encoder)
+        self.scorers = create_scorers(
+            bi_model_path=final_bi_model,
+            cross_model_path="cross-encoder/ms-marco-MiniLM-L-6-v2",
+            device=device,
+            bi_batch=16,
+            cross_batch=16,
+            cross_is_logit=self.cfg.cross_is_logit,
+            threads=num_threads,
+        )
+
+        # Rules & Ranker (Trọng tài & Bộ não hợp điểm)
+        self.rules = BusinessRules(
+            cap_bonus=self.cfg.cap_bonus,
+            cap_penalty=self.cfg.cap_penalty,
+        )
+        self.ranker = HeuristicRanker(self.cfg)
+
+        # Tính sẵn vector chủng loại để tăng tốc build index
+        if self.category_names:
+            try:
+                self._cat_vectors = self.scorers.bi.encode_texts(self.category_names)
+            except Exception as e:
+                print(f"⚠️ Không thể tính vector chủng loại: {e}")
+
+        print(f"--- ✅ AI Engine Ready (Model: {final_bi_model}) ---")
+
+    def _load_categories(self) -> Dict[str, List[str]]:
         if os.path.exists(self.cat_path):
             try:
-                with open(self.cat_path, 'r', encoding='utf-8') as f:
+                with open(self.cat_path, "r", encoding="utf-8") as f:
                     return json.load(f)
-            except: return {}
+            except Exception: return {}
         return {}
 
-    def predict_category(self, text):
-        """Dự đoán chủng loại kết hợp Keyword & AI Semantic"""
-        text_low = text.lower()
-        # Vòng 1: Keyword match
+    def predict_category(self, text: str, threshold: float = 0.55) -> str:
+        """Dự đoán chủng loại: Ưu tiên Keyword -> Semantic (AI)."""
+        text_low = (text or "").lower()
+
+        # Vòng 1: Khớp từ khóa cứng
         for cat, keywords in self.category_data.items():
             if any(kw in text_low for kw in keywords):
                 return cat
-        
-        # Vòng 2: AI suy luận
-        if self.cat_vectors is not None:
-            text_vec = self.bi_model.encode(text, convert_to_tensor=True)
-            cos_sims = util.cos_sim(text_vec, self.cat_vectors)[0]
-            best_idx = cos_sims.argmax().item()
-            if cos_sims[best_idx] > 0.4:
+
+        # Vòng 2: AI suy luận (Bi-Encoder)
+        if self._cat_vectors is not None:
+            try:
+                tvec = self.scorers.bi.encode_texts([text])[0]
+                # Tính cosine sim (normalize_to_unit=True để map về [0,1])
+                sims = self.scorers.bi.cosine_similarities(tvec, self._cat_vectors, normalize_to_unit=True)
+                best_idx = int(np.argmax(sims))
+                if sims[best_idx] > threshold:
                     return self.category_names[best_idx]
+            except Exception: pass
+
         return "Vật tư khác"
 
-    def clean_text(self, text):
-        """Làm sạch query nhưng giữ lại ký tự kỹ thuật quan trọng"""
-        if not text: return ""
-        text = re.sub(r'[!"#$%&\'()*+,\-/:;<=>?@[\\\]^_`{|}~]', ' ', text)
-        words = [w for w in text.split() if len(w) > 1 or w.isdigit()]
-        return " ".join(words)
+    def build_and_save_index(self, excel_path: str, overwrite: bool = True) -> bool:
+        """Xây dựng Index (Ủy quyền cho Retriever)."""
+        return self.retriever.build_index_from_excel(
+            excel_path=excel_path,
+            predict_category_fn=self.predict_category,
+            overwrite=overwrite
+        )
 
-    def extract_tech_specs(self, text):
-        """Trích xuất thông số (Số + Đơn vị) - Thừa kế từ bản ổn định"""
-        pattern = r'(\d+[\.\,]*\d*\s*(?:kw|v|a|dn|hp|mm|m|kg|inch|phi|ø|\"|x))'
-        specs = re.findall(pattern, text.lower())
-        return specs
+    def extract_tech_specs(self, text: str) -> List[str]:
+        """Trích xuất 'số + đơn vị' (VD: 200mm, DN50, phi60)."""
+        if not text: return []
+        t = text.lower().replace("ø", "o").replace("φ", "o")
+        # Pattern cải tiến bắt cả số lẻ và đơn vị kỹ thuật
+        pattern = r'\b(?:\d+(?:[\.,]\d+)?\s?(?:mm|cm|m|kw|w|v|a|dn|hp|kg|g|inch|in|")|o\d+|phi\d+|t\d+(?:[\.,]\d+)?|\d+x\d+)\b'
+        return list(set(re.findall(pattern, t)))
 
-    def extract_important_codes(self, text):
-        """Trích xuất mã hiệu kỹ thuật (SA240, A36...)"""
-        pattern = r'([a-zA-Z]+\d+\w*|\d+[a-zA-Z]+\w*)'
-        return re.findall(pattern, text.upper())
+    def extract_important_codes(self, text: str) -> List[str]:
+        """Trích xuất mã hiệu vật liệu/kỹ thuật (VD: SA240, 310S)."""
+        if not text: return []
+        return re.findall(r'([a-zA-Z]+\d+\w*|\d+[a-zA-Z]+\w*)', text.upper())
 
-    def build_and_save_index(self, excel_path, index_dir=None):
-        target_dir = index_dir or self.index_dir
-        try:
-            print(f"--- Bắt đầu xây dựng Index từ: {excel_path} ---")
-            df = pd.read_excel(excel_path)
-            if not os.path.exists(target_dir): os.makedirs(target_dir)
+    def search(
+        self,
+        query_str: str,
+        top_k: int = 15,
+        query_vec: Optional[torch.Tensor] = None,
+        explain: bool = False,
+    ) -> List[Dict]:
+        """Hàm tìm kiếm cốt lõi của hệ thống."""
+        if not self.retriever.exists(): return []
 
-            schema = Schema(
-                ma_vattu=ID(stored=True),
-                ten_vattu=TEXT(stored=True),
-                thong_so=TEXT(stored=True),
-                hang_sx=TEXT(stored=True),
-                chung_loai=TEXT(stored=True), # Thêm trường chủng loại vào Index
-                dvt=STORED,
-                all_text=TEXT(stored=True)
-            )
-
-            ix = create_in(target_dir, schema)
-            writer = ix.writer()
-            for _, row in df.iterrows():
-                ten = str(row.get('Tên vật tư', '')).strip()
-                ts = str(row.get('Thông số kỹ thuật', '')).strip()
-                hang = str(row.get('Hãng sản xuất', '')).strip()
-                
-                # AI tự gán chủng loại
-                cat = self.predict_category(f"{ten} {ts}")
-                
-                all_val = f"{ten} {ts} {hang}".strip()
-                writer.add_document(
-                    ma_vattu=str(row.get('Mã vật tư', '')),
-                    ten_vattu=ten,
-                    thong_so=ts,
-                    hang_sx=hang,
-                    chung_loai=cat,
-                    dvt=str(row.get('ĐVT', 'N/A')),
-                    all_text=all_val
-                )
-            writer.commit()
-            print(f"--- ✅ Build Index thành công ---")
-            return True
-        except Exception as e:
-            print(f"--- ❌ Lỗi Build Index: {str(e)} ---")
-            return False
-
-    def search(self, query_str, top_k=15, query_vec=None):
-        if not exists_in(self.index_dir): return []
-        
-        ix = open_dir(self.index_dir)
-        clean_query = self.clean_text(query_str)
-        q_low = query_str.lower()
-        
-        # Bước 1: Whoosh (Tầng 1)
-        candidates = []
-        with ix.searcher() as searcher:
-            og = OrGroup.factory(0.5)
-            parser = MultifieldParser(["ten_vattu", "thong_so", "all_text"], ix.schema, group=og)
-            query = parser.parse(clean_query)
-            results = searcher.search(query, limit=60)
-            for hit in results:
-                candidates.append({
-                    "ma": hit.get('ma_vattu', ''),
-                    "ten": hit.get('ten_vattu', ''),
-                    "ts": hit.get('thong_so', ''),
-                    "hang": hit.get('hang_sx', ''),
-                    "chung_loai": hit.get('chung_loai', 'N/A'),
-                    "dvt": hit.get('dvt', 'N/A'),
-                    "all_text": hit.get('all_text', ''),
-                    "w_score": hit.score
-                })
-        
+        # 1. TẦNG 1: LEXICAL RETRIEVAL (WHOOSH)
+        clean_q = clean_query_text(query_str)
+        candidates = self.retriever.search(clean_q, limit=self.cfg.whoosh_limit)
         if not candidates: return []
 
-        # Bước 2: Reranking (Tầng 2)
-        top_n = candidates[:30]
-        pairs = [[query_str, c['all_text']] for c in top_n]
-        cross_scores = self.cross_model.predict(pairs, batch_size=16)
+        # Chuẩn hóa điểm Whoosh theo batch
+        w_norm_arr = minmax_norm([c["w_score"] for c in candidates])
+        for c, w in zip(candidates, w_norm_arr):
+            c["_w_norm"] = float(w)
 
-        # Bước 3: Bi-Encoder & Bonus/Penalty (Tầng 3)
-        if query_vec is None:
-            query_vec = self.bi_model.encode(query_str, convert_to_tensor=True)
-        
-        all_docs_text = [c['all_text'] for c in top_n]
-        doc_vectors = self.bi_model.encode(all_docs_text, convert_to_tensor=True, batch_size=16)
-        cos_scores = util.cos_sim(query_vec, doc_vectors)[0]
-        
-        query_specs = self.extract_tech_specs(query_str) # Lấy thông số từ bản ổn định
-        q_codes = self.extract_important_codes(query_str) # Lấy mã hiệu
+        # 2. TẦNG 2: SEMANTIC SCORING (RERANKING)
+        top_n = candidates[:self.cfg.rerank_top_n]
+        texts = [c["all_text"] for c in top_n]
 
+        # A) Cross-Encoder (Deep match)
+        pairs = [(query_str, t) for t in texts]
+        s_cross_arr = self.scorers.cross.score_pairs(pairs)
+
+        # B) Bi-Encoder (Cosine Similarity)
+        q_vec = query_vec if query_vec is not None else self.scorers.bi.encode_query(query_str)
+        doc_vecs = self.scorers.bi.encode_texts(texts)
+        s_bi_arr = self.scorers.bi.get_scores(q_vec, doc_vecs)
+
+        # 3. TẦNG 3: BUSINESS RULES & FUSION
+        q_specs = self.extract_tech_specs(query_str)
+        q_codes = self.extract_important_codes(query_str)
+        q_numbers = extract_all_numbers(query_str)
+
+        results = []
         for i, c in enumerate(top_n):
-            s_cross = 1 / (1 + np.exp(-cross_scores[i]))
-            s_bi = float(cos_scores[i])
+            # Tính thưởng/phạt
+            bonus, penalty, reasons = self.rules.compute_bonus_penalty(
+                query_str=query_str,
+                doc_text=c["all_text"],
+                q_codes=q_codes,
+                q_specs=q_specs,
+                q_numbers=q_numbers,
+                explain=explain,
+            )
+
+            # Hợp nhất điểm qua Ranker
+            final_score, details = self.ranker.score(
+                s_cross=float(s_cross_arr[i]),
+                s_bi=float(s_bi_arr[i]),
+                w_norm=float(c["_w_norm"]),
+                bonus=bonus,
+                penalty=penalty
+            )
+
+            # Đóng gói kết quả
+            res_item = {
+                "ma_vattu": c["ma"],
+                "ten_vattu": c["ten"],
+                "thong_so": c["ts"],
+                "hang_sx": c["hang"],
+                "chung_loai": c["chung_loai"],
+                "dvt": c["dvt"],
+                "final_score": final_score
+            }
+            if explain:
+                res_item["explain"] = {**details, "why": reasons}
             
-            # Bonus từ bản ổn định
-            bonus = 0
-            doc_text_low = c['all_text'].lower()
-            for spec in query_specs:
-                if spec in doc_text_low: bonus += 0.15
-            
-            # Bonus từ bản mới (Mã hiệu)
-            for code in q_codes:
-                if len(code) > 2 and code in doc_text_low.upper(): bonus += 0.20
+            results.append(res_item)
 
-            # Hình phạt (Penalty) từ bản ổn định
-            penalty = 0
-            if "sealant" in q_low and "van" in doc_text_low: penalty = 0.4
-            if "hcl" in q_low and "naoh" in doc_text_low: penalty = 0.6
+        # Sắp xếp và trả kết quả
+        results.sort(key=lambda x: x["final_score"], reverse=True)
+        return results[:top_k]
 
-            # Trọng số kết hợp
-            w_norm = min(c['w_score'] / 50, 1.0)
-            # 50% Cross + 30% Bi + 20% Whoosh + Bonus - Penalty
-            final_score = (s_cross * 0.5) + (s_bi * 0.3) + (w_norm * 0.2) + bonus - penalty
-            c['final_score'] = float(max(min(final_score, 1.0), 0.0))
-
-        top_n.sort(key=lambda x: x['final_score'], reverse=True)
-        for item in top_n: item.pop('all_text', None)
-        return top_n[:top_k]
-
-    def search_batch(self, queries, top_k=1):
+    def search_batch(self, queries: List[str], top_k: int = 1, explain: bool = False) -> List[List[Dict]]:
+        """Xử lý tìm kiếm hàng loạt (Tối ưu CPU)."""
         if not queries: return []
-        query_embs = self.bi_model.encode(queries, convert_to_tensor=True, batch_size=32)
-        all_results = []
-        for i, q_str in enumerate(queries):
-            res = self.search(q_str, top_k=top_k, query_vec=query_embs[i])
-            all_results.append(res)
-        return all_results
+        q_vecs = self.scorers.bi.encode_texts(queries)
+        return [self.search(q, top_k=top_k, query_vec=q_vecs[i], explain=explain) for i, q in enumerate(queries)]
