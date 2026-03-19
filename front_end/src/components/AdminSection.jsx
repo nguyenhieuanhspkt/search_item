@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { Database, RefreshCw, HardDrive, ShieldAlert, Settings, FileSpreadsheet, Lock } from 'lucide-react';
 import api from '../constants/api_service';
@@ -7,6 +8,7 @@ const AdminSection = ({ status }) => {
   const [msg, setMsg] = useState("");
   const [password, setPassword] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
+  const [progress, setProgress] = useState(0); // Lưu % từ 0 - 100
   
   // Dùng ref để kích hoạt chọn file ẩn
   const fileInputRef = useRef(null);
@@ -20,10 +22,10 @@ const AdminSection = ({ status }) => {
   };
 
   const handleRebuild = async () => {
-    // 1. Kiểm tra đầu vào
+    // 1. Kiểm tra đầu vào (Giữ nguyên logic của bạn)
     if (!selectedFile) {
       setMsg("⚠️ Vui lòng chọn file Excel danh mục vật tư trước.");
-      fileInputRef.current.click(); // Mở hộp thoại chọn file luôn cho tiện
+      fileInputRef.current.click();
       return;
     }
     if (!password) {
@@ -32,20 +34,56 @@ const AdminSection = ({ status }) => {
     }
 
     if (!window.confirm("Hành động này sẽ xóa dữ liệu cũ và nạp lại từ đầu. Bạn chắc chứ?")) return;
-    
+
     setLoading(true);
-    setMsg("🚀 Đang nạp dữ liệu và tạo chỉ mục AI... Quá trình này có thể mất 1-2 phút.");
-    
+    setProgress(0);
+    setMsg("🚀 Khởi động tiến trình nạp dữ liệu...");
+
     try {
-      // Gửi cả FILE và PASSWORD lên api_service
-      const res = await api.rebuildIndex(selectedFile, password); 
-      
-      if (res.status === "success") {
-        setMsg("✅ " + (res.message || "Cập nhật dữ liệu thành công!"));
-        setSelectedFile(null);
-        setPassword("");
-      } else {
-        setMsg("❌ " + (res.message || "Lỗi: Sai mật khẩu hoặc file không đúng định dạng."));
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      formData.append("password", password);
+
+      // SỬ DỤNG FETCH ĐỂ ĐỌC STREAM (Thay vì dùng api_service cũ)
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/admin/rebuild-index`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        lines.forEach(line => {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.replace('data: ', ''));
+              
+              if (data.status === "progress") {
+                setProgress(data.percent);
+                setMsg(`🔄 Đang phân loại AI: ${data.percent}% (${data.current}/${data.total})`);
+              } else if (data.status === "info") {
+                setMsg(data.message);
+              } else if (data.status === "success") {
+                setMsg("✅ " + data.message);
+                setProgress(100);
+                setSelectedFile(null);
+                setPassword("");
+              } else if (data.status === "error") {
+                setMsg("❌ " + data.message);
+                setLoading(false);
+              }
+            } catch (e) {
+              console.error("Lỗi parse stream:", e);
+            }
+          }
+        });
       }
     } catch (err) {
       setMsg("❌ Lỗi kết nối Server. Hãy kiểm tra Backend.");
@@ -54,7 +92,7 @@ const AdminSection = ({ status }) => {
     }
   };
 
-  return (
+return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center gap-4 border-b pb-6">
         <div className="bg-orange-500/10 p-3 rounded-xl">
@@ -75,11 +113,12 @@ const AdminSection = ({ status }) => {
           </div>
 
           <div className="space-y-4">
-            {/* Nút chọn File giả lập */}
+            {/* Nút chọn File - Vô hiệu hóa khi đang loading */}
             <div 
-              onClick={() => fileInputRef.current.click()}
-              className={`p-4 rounded-2xl border-2 border-dashed cursor-pointer flex flex-col items-center justify-center gap-2 transition-all ${
-                selectedFile ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-100 hover:bg-blue-50"
+              onClick={() => !loading && fileInputRef.current.click()}
+              className={`p-4 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 transition-all ${
+                loading ? "bg-gray-50 border-gray-100 cursor-not-allowed opacity-60" :
+                selectedFile ? "bg-green-50 border-green-200 cursor-pointer" : "bg-gray-50 border-gray-100 hover:bg-blue-50 cursor-pointer"
               }`}
             >
               <FileSpreadsheet className={selectedFile ? "text-green-500" : "text-gray-400"} size={40} />
@@ -92,6 +131,7 @@ const AdminSection = ({ status }) => {
                 onChange={handleFileChange} 
                 className="hidden" 
                 accept=".xlsx, .xls"
+                disabled={loading}
               />
             </div>
 
@@ -103,10 +143,12 @@ const AdminSection = ({ status }) => {
                 placeholder="Mật khẩu Admin"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                disabled={loading}
+                className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm disabled:opacity-50"
               />
             </div>
 
+            {/* Nút bấm xác nhận */}
             <button 
               onClick={handleRebuild}
               disabled={loading}
@@ -123,6 +165,22 @@ const AdminSection = ({ status }) => {
               )}
               {loading ? "Đang xử lý dữ liệu AI..." : "Xác nhận nạp dữ liệu"}
             </button>
+
+            {/* Hiển thị Progress Bar khi đang nạp - Đặt ngoài button */}
+            {loading && (
+              <div className="mt-4 p-4 bg-blue-50/50 rounded-2xl border border-blue-100 animate-in zoom-in-95 duration-300">
+                <div className="flex justify-between text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-2">
+                  <span>Tiến độ đồng bộ dữ liệu</span>
+                  <span>{Math.round(progress)}%</span>
+                </div>
+                <div className="w-full h-2 bg-blue-100 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-blue-600 transition-all duration-500 ease-out shadow-[0_0_8px_rgba(37,99,235,0.4)]"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -154,19 +212,24 @@ const AdminSection = ({ status }) => {
 
           <div className="mt-6 flex items-start gap-2 text-[10px] text-gray-400 italic">
             <AlertCircle size={14} className="shrink-0" />
-            Lưu ý: Sau khi nạp dữ liệu, hệ thống sẽ tự động phân loại chủng loại dựa trên file categories.json.
+            Lưu ý: Sau khi nạp dữ liệu, hệ thống sẽ tự động phân loại chủng loại dựa trên AI và tệp cấu hình.
           </div>
         </div>
       </div>
 
+      {/* Thông báo kết quả hoặc lỗi */}
       {msg && (
         <div className={`p-5 rounded-2xl border flex items-center gap-4 animate-in slide-in-from-bottom-4 duration-300 ${
-          msg.includes("✅") ? "bg-green-50 border-green-100 text-green-700" : "bg-blue-50 border-blue-100 text-blue-700"
+          msg.includes("✅") ? "bg-green-50 border-green-100 text-green-700" : 
+          msg.includes("❌") ? "bg-red-50 border-red-100 text-red-700" : "bg-blue-50 border-blue-100 text-blue-700"
         }`}>
-          <div className={`p-2 rounded-full ${msg.includes("✅") ? "bg-green-100" : "bg-blue-100"}`}>
+          <div className={`p-2 rounded-full ${msg.includes("✅") ? "bg-green-100" : msg.includes("❌") ? "bg-red-100" : "bg-blue-100"}`}>
             <ShieldAlert size={20} />
           </div>
-          <span className="font-bold text-sm">{msg}</span>
+          <div className="flex flex-col">
+             <span className="font-bold text-sm">{msg}</span>
+             {loading && <span className="text-[10px] opacity-70">Vui lòng không đóng trình duyệt lúc này...</span>}
+          </div>
         </div>
       )}
     </div>

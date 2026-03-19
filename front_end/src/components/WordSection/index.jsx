@@ -51,43 +51,85 @@ const WordSection = () => {
   /**
    * Bước 2: Chạy thẩm định AI hàng loạt (Bulk Match)
    */
-  const handleStart = async () => {
+const handleStart = async () => {
     if (previewData.length === 0) return;
     
     setIsProcessing(true);
-    setProgress(20); // Bắt đầu gửi dữ liệu đi
+    setProgress(0);
+    setReport([]); // Xóa báo cáo cũ nếu có
 
     try {
-      // Chuẩn bị payload khớp với MaterialInput ở Backend
+      // 1. Chuẩn bị payload
       const payload = previewData.map(item => ({
-        stt: item.stt || "",
+        stt: String(item.stt || ""),
         ten: item.ten,
         tskt: item.ts || "", 
         dvt: item.dvt_word || ""
       }));
 
-      const res = await api.bulkMatch(payload);
+      // 2. Sử dụng FETCH để hứng Stream (Thay vì api_service)
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/bulk-match`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
 
-      if (res.status === "success") {
-        // Map lại kết quả từ Backend trả về
-        const formattedResults = res.data.map((item, index) => ({
-          ...previewData[index],
-          tenWord: previewData[index].ten, // Giữ lại tên gốc để xuất Excel
-          matchHeThong: item.stock_name || item.ten_vattu,
-          erp: item.erp || item.ma_vattu,
-          dvt: item.dvt_he_thong || item.dvt, // Hứng ĐVT
-          chung_loai: item.chung_loai, // Hứng Chủng loại
-          score: item.score
-        }));
-        
-        setReport(formattedResults);
-        setProgress(100);
-      } else {
-        alert("Lỗi thẩm định: " + res.message);
+      if (!response.ok) throw new Error("Cổng AI Server không phản hồi");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        lines.forEach(line => {
+          if (line.startsWith('data: ')) {
+            try {
+              const res = JSON.parse(line.replace('data: ', ''));
+
+              if (res.status === "progress") {
+                // Cập nhật % tiến độ cho thanh Progress Bar
+                setProgress(res.percent);
+              } 
+              else if (res.status === "success") {
+                // Nhận kết quả cuối cùng và map lại để hiển thị
+                const formattedResults = res.data.map((item, index) => ({
+                  ...previewData[index],
+                  // Thông tin khớp từ Hệ thống
+                  matchHeThong: item.stock_name,
+                  erp: item.erp,
+                  dvt: item.dvt_he_thong,
+                  chung_loai: item.chung_loai,
+                  
+                  // Thông tin kỹ thuật AI
+                  score: item.score,
+                  explain: item.explain, // Giữ lại chi tiết Rules (Thưởng/Phạt)
+                  diff_html: item.diff_html, // Giữ lại highlight xanh đỏ
+                  
+                  // Dữ liệu thô nếu cần soi kỹ hơn
+                  raw: item.full_stock_info 
+                }));
+                
+                setReport(formattedResults);
+                setProgress(100);
+              } 
+              else if (res.status === "error") {
+                alert("Lỗi thẩm định: " + res.message);
+                setIsProcessing(false);
+              }
+            } catch (e) {
+              console.error("Lỗi giải mã gói tin AI:", e);
+            }
+          }
+        });
       }
     } catch (err) {
       console.error("Lỗi Bulk Match:", err);
-      alert("Không thể kết nối với AI Server để thẩm định hàng loạt!");
+      alert("Không thể kết nối với AI Server! Hãy kiểm tra Backend tại máy cơ quan.");
     } finally {
       setIsProcessing(false);
     }

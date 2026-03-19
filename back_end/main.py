@@ -1,3 +1,4 @@
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi import FastAPI, Form, File, UploadFile
@@ -6,6 +7,7 @@ import os
 import sys
 import shutil
 import io
+import json
 import asyncio
 import pandas as pd
 from docx import Document
@@ -48,10 +50,10 @@ app.add_middleware(
 
 # Model dữ liệu đầu vào từ React
 class MaterialInput(BaseModel):
-    stt: Optional[str] = None
-    ten: str
-    tskt: Optional[str] = ""
-    dvt: Optional[str] = ""
+    stt: str = ""
+    ten: str = ""   # Phải khớp với 'ten' trong payload
+    tskt: str = ""  # Phải khớp với 'tskt' trong payload
+    dvt: str = ""
 
 
 # --- 3. SỰ KIỆN KHỞI ĐỘNG (STARTUP) ---
@@ -79,34 +81,35 @@ async def load_ai():
 @app.post("/admin/rebuild-index")
 async def rebuild_index(file: UploadFile = File(...), password: str = Form(...)):
     global engine, bulk_matcher
+    
     if password != ADMIN_PASSWORD:
         return {"status": "error", "message": "Sai mật khẩu Admin"}
     
     temp_path = os.path.join(BASE_DIR, "temp_data.xlsx")
-    try:
-        with open(temp_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+    
+    # Ghi file tạm đồng bộ vì đây là bước khởi đầu nhanh
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    def progress_stream():
+        # Gọi hàm generator từ engine (Giữ nguyên tên hàm)
+        for step in engine.build_and_save_index(temp_path, overwrite=True):
+            # Trả về định dạng Server-Sent Events (SSE)
+            yield f"data: {json.dumps(step, ensure_ascii=False)}\n\n"
         
-        # SỬA TẠI ĐÂY: Sử dụng hàm build_and_save_index mới
-        success = engine.build_and_save_index(temp_path, overwrite=True)
-        
-        if success:
-            # Load lại matcher sau khi nạp dữ liệu mới
+        # Sau khi xong hết thì xử lý hậu kỳ
+        try:
+            # Re-init BulkMatcher nếu cần
+            # Lưu ý: BulkMatcher nên được init lại sau khi stream thành công ở bước cuối
             if BulkMatcher:
-                bulk_matcher = BulkMatcher(engine=engine)
+                globals()['bulk_matcher'] = BulkMatcher(engine=engine)
             
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-                
-            return {
-                "status": "success", 
-                "message": "Nạp dữ liệu và phân loại chủng loại thành công!"
-            }
-        else:
-            return {"status": "error", "message": "Lỗi xử lý file Excel."}
+        except:
+            pass
 
-    except Exception as e:
-        return {"status": "error", "message": f"Lỗi hệ thống: {str(e)}"}
+    return StreamingResponse(progress_stream(), media_type="text/event-stream")
 
 # --- 5. ENDPOINT: TRẠNG THÁI & TÌM KIẾM ---
 @app.get("/system-status")
@@ -174,12 +177,41 @@ async def handle_bulk_match(items: List[MaterialInput]):
     if not is_model_loaded or bulk_matcher is None:
         return {"status": "error", "message": "AI chưa sẵn sàng hoặc chưa nạp Index."}
     
-    try:
-        input_data = [item.dict() for item in items]
-        results = bulk_matcher.process_data(input_data)
-        return {"status": "success", "total": len(results), "data": results}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    def generate_results():
+        try:
+            input_data = [item.dict() for item in items]
+            total = len(input_data)
+            
+            # --- PHÒNG THỦ TẠI ĐÂY ---
+            if total == 0:
+                yield f"data: {json.dumps({'status': 'info', 'message': 'Danh sách trống'}, ensure_ascii=False)}\n\n"
+                return
+
+            all_results = []
+            batch_size = 20
+            percent = 0  # <--- KHỞI TẠO BIẾN Ở ĐÂY ĐỂ TRÁNH LỖI
+            
+            for i in range(0, total, batch_size):
+                chunk = input_data[i : i + batch_size]
+                chunk_results = bulk_matcher.process_data(chunk)
+                all_results.extend(chunk_results)
+                
+                current_count = min(i + batch_size, total)
+                percent = round((current_count / total) * 100, 2)
+                
+                yield f"data: {json.dumps({'status': 'progress', 'percent': percent, 'current': current_count, 'total': total}, ensure_ascii=False)}\n\n"
+            
+            # Gửi kết quả cuối cùng
+            yield f"data: {json.dumps({'status': 'success', 'data': all_results}, ensure_ascii=False)}\n\n"
+            
+        except Exception as e:
+            # Nếu lỗi xảy ra, print ra console để mình còn biết đường sửa tiếp
+            import traceback
+            print(f"🔥 LỖI TẠI MAIN: {str(e)}")
+            print(traceback.format_exc()) # Dòng này sẽ hiện chi tiết lỗi nằm ở dòng nào luôn
+            yield f"data: {json.dumps({'status': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(generate_results(), media_type="text/event-stream")
     
 base_path = os.path.dirname(os.path.abspath(__file__))
 dist_path = os.path.join(os.path.dirname(base_path), "front_end", "dist")

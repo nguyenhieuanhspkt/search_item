@@ -43,44 +43,82 @@ class WhooshRetriever:
             create_in(self.index_dir, self.schema())
         return open_dir(self.index_dir)
 
+    # Sửa lại hàm trong class WhooshRetriever
     def build_index_from_dataframe(
         self, 
         df: pd.DataFrame, 
-        predict_category_fn: Optional[Callable[[str], str]] = None,
+        categories_list: Optional[List[str]] = None, 
         overwrite: bool = True
     ) -> bool:
-        """Xây dựng index có giới hạn tài nguyên để tránh treo máy i5"""
+        """
+        Xây dựng Index Whoosh từ DataFrame. 
+        Sử dụng danh sách chủng loại đã được dự đoán trước (Batch) để tối ưu tốc độ.
+        """
+        import os
+        from whoosh.index import create_in
+
         try:
+            # 1. Chuẩn bị thư mục index
             if not os.path.exists(self.index_dir):
                 os.makedirs(self.index_dir)
 
+            # 2. Kiểm tra tính hợp lệ của dữ liệu đầu vào
+            if categories_list and len(categories_list) != len(df):
+                print(f"⚠️ Cảnh báo: Danh sách chủng loại ({len(categories_list)}) "
+                      f"không khớp với số dòng dữ liệu ({len(df)}).")
+                # Nếu không khớp, ta sẽ bù bằng "Vật tư khác" để tránh lỗi index out of range
+                if len(categories_list) < len(df):
+                    categories_list.extend(["Vật tư khác"] * (len(df) - len(categories_list)))
+
+            # 3. Khởi tạo Index và Writer
             ix = create_in(self.index_dir, self.schema())
-            # Tối ưu: limitmb=256 giúp Whoosh không ăn quá nhiều RAM khi build
-            writer = ix.writer(limitmb=256) 
+            
+            # limitmb=512 giúp Whoosh sử dụng nhiều RAM hơn để giảm số lần ghi đĩa (I/O)
+            # procs=2 (tùy chọn) có thể dùng để chạy đa tiến trình nếu file cực lớn
+            writer = ix.writer(limitmb=512) 
 
             f = self.fields
-            for _, row in df.iterrows():
-                ten = str(row.get("Tên vật tư", "")).strip()
-                ts = str(row.get("Thông số kỹ thuật", "")).strip()
-                hang = str(row.get("Hãng sản xuất", "")).strip()
+            print(f"--- ✍️ Đang ghi {len(df)} tài liệu vào Index ---")
+
+            # 4. Lặp và thêm tài liệu
+            for i, (_, row) in enumerate(df.iterrows()):
+                # Trích xuất và làm sạch dữ liệu từ row
+                ma_vattu = str(row.get("Mã vật tư", "")).strip()
+                ten_vattu = str(row.get("Tên vật tư", "")).strip()
+                thong_so = str(row.get("Thông số kỹ thuật", "")).strip()
+                hang_sx = str(row.get("Hãng sản xuất", "")).strip()
+                dvt = str(row.get("ĐVT", "N/A")).strip()
                 
-                cat = predict_category_fn(f"{ten} {ts}") if predict_category_fn else "Vật tư khác"
+                # Ưu tiên lấy từ categories_list (đã chạy Batch AI từ trước)
+                cat = categories_list[i] if categories_list else "Vật tư khác"
                 
+                # Tạo trường all_text để tìm kiếm toàn văn (lexical search)
+                # Chuyển về chữ thường để Whoosh tìm kiếm không phân biệt hoa thường hiệu quả hơn
+                combined_text = f"{ten_vattu} {thong_so} {hang_sx}".strip().lower()
+
                 writer.add_document(
                     **{
-                        f.id_field: str(row.get("Mã vật tư", "")),
-                        f.name_field: ten,
-                        f.spec_field: ts,
-                        f.brand_field: hang,
+                        f.id_field: ma_vattu,
+                        f.name_field: ten_vattu,
+                        f.spec_field: thong_so,
+                        f.brand_field: hang_sx,
                         f.category_field: cat,
-                        f.unit_field: str(row.get("ĐVT", "N/A")),
-                        f.all_text_field: f"{ten} {ts} {hang}".strip().lower(),
+                        f.unit_field: dvt,
+                        f.all_text_field: combined_text,
                     }
                 )
+
+            # 5. Lưu thay đổi
+            print("--- 💾 Đang commit dữ liệu xuống ổ đĩa (vui lòng đợi)... ---")
             writer.commit()
+            print("--- ✅ Build Index hoàn tất thành công! ---")
             return True
+
         except Exception as e:
-            print(f"❌ Lỗi Build Index: {e}")
+            # Nếu có lỗi, cố gắng hủy bỏ các thay đổi chưa commit để tránh hỏng index
+            if 'writer' in locals():
+                writer.cancel()
+            print(f"❌ Lỗi nghiêm trọng khi Build Index: {str(e)}")
             return False
 
     def search(self, clean_query: str, limit: int = 60) -> List[Dict]:

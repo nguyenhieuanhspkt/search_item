@@ -1,7 +1,7 @@
 // src/api_service.js
 import axios from "axios";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "http://10.156.43.54:8000";
 
 const api = {
   // Kiểm tra trạng thái hệ thống

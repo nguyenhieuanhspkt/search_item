@@ -91,3 +91,66 @@ def clean_query_text(text: str) -> str:
 def clamp01(x: float) -> float:
     """Đảm bảo điểm cuối cùng luôn nằm trong dải [0, 1] để Frontend hiển thị %."""
     return float(max(min(x, 1.0), 0.0))
+
+
+
+import numpy as np
+from typing import List, Dict, Optional
+
+def predict_category_batch(
+    texts: List[str], 
+    category_data: Dict[str, List[str]], 
+    category_names: List[str],
+    cat_vectors: Optional[np.ndarray],
+    bi_encoder_model: any, 
+    threshold: float = 0.55
+) -> List[str]:
+    if not texts: return []
+    
+    results = [None] * len(texts)
+    to_ai_indices = []
+    to_ai_texts = []
+
+    # Bước 1: Khớp từ khóa nhanh
+    for i, text in enumerate(texts):
+        text_low = (text or "").lower()
+        found = False
+        for cat, keywords in category_data.items():
+            if any(kw in text_low for kw in keywords):
+                results[i] = cat
+                found = True
+                break
+        if not found:
+            to_ai_indices.append(i)
+            to_ai_texts.append(text)
+
+    # Bước 2: AI xử lý
+    if to_ai_texts and cat_vectors is not None:
+        try:
+            # 1. Encode sang vector
+            all_vecs = bi_encoder_model.encode_texts(to_ai_texts) 
+            
+            # 2. Chuẩn hóa vector đầu vào để tính Dot Product chính xác
+            norm_all_vecs = all_vecs / np.linalg.norm(all_vecs, axis=1, keepdims=True)
+            # Giả sử cat_vectors cũng đã được chuẩn hóa (unit vectors) ở Engine
+            
+            for i, tvec in enumerate(norm_all_vecs):
+                # Tính tích vô hướng (Dot Product) - tương đương Cosine Similarity
+                raw_sims = np.dot(cat_vectors, tvec) 
+                
+                # SỬ DỤNG HÀM NORMALIZE CỦA BẠN TẠI ĐÂY:
+                normalized_sims = normalize_bi_scores(raw_sims)
+                
+                best_idx = int(np.argmax(normalized_sims))
+                orig_idx = to_ai_indices[i]
+                
+                # So sánh với ngưỡng đã được chuẩn hóa
+                if normalized_sims[best_idx] > threshold:
+                    results[orig_idx] = category_names[best_idx]
+                else:
+                    results[orig_idx] = "Vật tư khác"
+                    
+        except Exception as e:
+            print(f"⚠️ Lỗi Batch AI: {e}")
+
+    return [r or "Vật tư khác" for r in results]

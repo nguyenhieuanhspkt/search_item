@@ -1,6 +1,6 @@
 # search_item/back_end/core/engine.py
 from __future__ import annotations
-
+import pandas as pd
 import os
 import json
 import re
@@ -15,6 +15,7 @@ from .helpers import (
     minmax_norm,
     normalize_bi_scores,
     extract_all_numbers,
+    predict_category_batch,
     clamp01,
 )
 from .retrievers import WhooshRetriever
@@ -118,13 +119,78 @@ class HybridSearchEngine:
 
         return "Vật tư khác"
 
-    def build_and_save_index(self, excel_path: str, overwrite: bool = True) -> bool:
-        """Xây dựng Index (Ủy quyền cho Retriever)."""
-        return self.retriever.build_index_from_excel(
-            excel_path=excel_path,
-            predict_category_fn=self.predict_category,
-            overwrite=overwrite
-        )
+    def build_and_save_index(self, excel_path: str, overwrite: bool = True):
+        """
+        Quy trình xây dựng Index: Đọc Excel -> Batch AI -> Ghi Index.
+        Trả về generator để stream tiến trình về Frontend.
+        """
+        import pandas as pd
+        import os
+        from .helpers import predict_category_batch # Đảm bảo đã import hàm này
+
+        if not os.path.exists(excel_path):
+            yield {"status": "error", "message": "Không tìm thấy file tạm."}
+            return
+
+        try:
+            # 1. Đọc dữ liệu
+            yield {"status": "info", "message": "📂 Đang đọc file Excel..."}
+            df = pd.read_excel(excel_path).fillna("")
+            total_rows = len(df)
+            
+            # 2. Chuẩn bị text
+            texts_to_predict = [
+                f"{str(r.get('Tên vật tư', ''))} {str(r.get('Thông số kỹ thuật', ''))}".strip() 
+                for _, r in df.iterrows()
+            ]
+
+            # 3. Dự đoán AI theo Batch
+            all_categories = []
+            batch_size = 128
+            
+            yield {"status": "info", "message": f"🤖 Đang phân loại AI cho {total_rows} dòng..."}
+
+            for i in range(0, total_rows, batch_size):
+                chunk = texts_to_predict[i : i + batch_size]
+                
+                # Sử dụng hàm helper đã viết trong helpers.py
+                chunk_cats = predict_category_batch(
+                    texts=chunk,
+                    category_data=self.category_data,
+                    category_names=self.category_names,
+                    cat_vectors=self._cat_vectors,
+                    bi_encoder_model=self.scorers.bi,
+                    threshold=0.55
+                )
+                all_categories.extend(chunk_cats)
+                
+                # Tính % dựa trên len(df) thực tế
+                current_count = min(i + batch_size, total_rows)
+                percent = round((current_count / total_rows) * 100, 2)
+                
+                # Bắn dữ liệu tiến độ về API
+                yield {
+                    "status": "progress", 
+                    "percent": percent, 
+                    "current": current_count, 
+                    "total": total_rows
+                }
+
+            # 4. Ghi vào Whoosh
+            yield {"status": "info", "message": "💾 Đang ghi dữ liệu vào Index..."}
+            success = self.retriever.build_index_from_dataframe(
+                df=df,
+                categories_list=all_categories,
+                overwrite=overwrite
+            )
+
+            if success:
+                yield {"status": "success", "message": "✨ Nạp dữ liệu thành công!"}
+            else:
+                yield {"status": "error", "message": "Lỗi khi ghi index."}
+
+        except Exception as e:
+            yield {"status": "error", "message": f"Lỗi hệ thống: {str(e)}"}
 
     def extract_tech_specs(self, text: str) -> List[str]:
         """Trích xuất 'số + đơn vị' (VD: 200mm, DN50, phi60)."""
@@ -222,3 +288,5 @@ class HybridSearchEngine:
         if not queries: return []
         q_vecs = self.scorers.bi.encode_texts(queries)
         return [self.search(q, top_k=top_k, query_vec=q_vecs[i], explain=explain) for i, q in enumerate(queries)]
+    
+    

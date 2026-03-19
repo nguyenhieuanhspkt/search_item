@@ -47,105 +47,67 @@ const PreviewTable = ({ data, isResult, loading }) => {
       <div className="overflow-x-auto">
         <table className="w-full text-sm text-left border-collapse">
           <thead>
-            <tr className="bg-gray-50 text-gray-500 uppercase text-[10px] tracking-widest">
-              <th className="px-6 py-4 font-semibold w-16 text-center border-r border-gray-100">STT</th>
-              <th className="px-6 py-4 font-semibold min-w-[220px]">Nội dung gốc (Word)</th>
-              
-              {isResult ? (
-                <>
-                  <th className="px-6 py-4 font-semibold bg-blue-50/40 text-blue-600 min-w-[280px]">
-                    Gợi ý hệ thống & Chủng loại
-                  </th>
-                  <th className="px-6 py-4 font-semibold bg-blue-50/40 text-blue-600">ĐVT Hệ thống</th>
-                  <th className="px-6 py-4 font-semibold bg-blue-50/40 text-blue-600 text-center">Độ tin cậy</th>
-                </>
-              ) : (
-                <>
-                  <th className="px-6 py-4 font-semibold">Thông số kỹ thuật</th>
-                  <th className="px-6 py-4 font-semibold">ĐVT (Word)</th>
-                </>
-              )}
+            <tr className="bg-gray-50 text-gray-600 text-[11px] uppercase tracking-wider font-bold">
+              <th className="p-4 text-center w-12">STT</th>
+              <th className="p-4 text-left">Vật tư (Word)</th>
+              <th className="p-4 text-left">Thông số kỹ thuật (Word)</th>
+              <th className="p-4 text-center">ĐVT (Word)</th> {/* THÊM CỘT NÀY */}
+              <th className="p-4 text-left text-blue-600">👉 Vật tư khớp nhất (VT4)</th>
+              <th className="p-4 text-center">Mã ERP</th>
+              <th className="p-4 text-center">ĐVT (ERP)</th>
+              <th className="p-4 text-center">Độ tin cậy</th>
             </tr>
           </thead>
 
-          <tbody className="divide-y divide-gray-50">
+          <tbody>
             {data.map((item, idx) => (
-              <tr key={idx} className="hover:bg-gray-50/40 transition-colors group">
-                <td className="px-6 py-4 text-gray-400 font-mono text-center text-xs border-r border-gray-50">
-                  {item.stt || idx + 1}
-                </td>
+              <tr key={idx} className="border-b border-gray-50 hover:bg-blue-50/40 transition-all">
+                <td className="p-4 text-center text-gray-400 text-xs">{item.stt}</td>
                 
-                {/* Phần Nội dung gốc từ Word */}
-                <td className="px-6 py-4">
-                  <div className="font-medium text-gray-800 leading-snug">
-                    {item.ten || item.tenWord}
-                  </div>
-                  <div className="text-[11px] text-gray-400 mt-1 italic line-clamp-1">
-                    {item.ts || "Không có thông số"}
-                  </div>
+                {/* 1. Tên từ Word */}
+                <td className="p-4 font-semibold text-gray-800 text-sm w-[200px]">
+                  {item.ten}
                 </td>
 
-                {!isResult && (
-                  <>
-                    <td className="px-6 py-4 text-gray-500 text-xs">{item.ts || "---"}</td>
-                    <td className="px-6 py-4 text-gray-500 text-xs font-medium">{item.dvt_word || "---"}</td>
-                  </>
-                )}
+                {/* 2. Thông số từ Word - Tách riêng giúp bảng thoáng hơn */}
+                <td className="p-4 text-[11px] text-gray-500 max-w-[250px] italic">
+                  {item.ts || "---"}
+                </td>
 
-                {/* Phần Kết quả AI trả về */}
-                {isResult && (
-                  <>
-                    <td className="px-6 py-4">
-                      <div className="text-blue-900 font-bold text-sm mb-2">
-                        {item.matchHeThong}
-                      </div>
-                      
-                      <div className="flex flex-wrap gap-2">
-                        {/* Tag Mã ERP */}
-                        <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100 text-[10px] font-mono font-bold">
-                          <Box size={10} /> {item.erp}
-                        </span>
-                        
-                        {/* Tag Chủng loại tự động */}
-                        {item.chung_loai && (
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-semibold transition-all ${getCategoryStyle(item.chung_loai)}`}>
-                            <Tag size={10} /> {item.chung_loai}
-                          </span>
-                        )}
-                      </div>
-                    </td>
+                {/* 3. ĐVT từ Word */}
+                <td className="p-4 text-center text-sm font-medium text-orange-600">
+                  {item.dvt_word || item.dvt || "---"}
+                </td>
 
-                    {/* Cột Đơn vị tính và cảnh báo lệch ĐVT */}
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="text-gray-700 font-bold">{item.dvt || "N/A"}</span>
-                        {item.dvt_word && item.dvt_word.toLowerCase() !== (item.dvt || "").toLowerCase() && (
-                          <span className="text-[9px] text-red-500 flex items-center gap-0.5 mt-1 font-medium bg-red-50 px-1 rounded">
-                            <AlertCircle size={8} /> Lệch gốc: {item.dvt_word}
-                          </span>
-                        )}
-                      </div>
-                    </td>
+                {/* 4. Kết quả AI (Xanh Đỏ) */}
+                <td className="p-4">
+                  <div 
+                    className="text-sm leading-relaxed"
+                    dangerouslySetInnerHTML={{ __html: item.diff_html || item.matchHeThong || "---" }} 
+                  />
+                </td>
 
-                    {/* Cột Điểm số % */}
-                    <td className="px-6 py-4 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className={`min-w-[45px] py-1 rounded-lg text-[11px] font-black shadow-sm border ${
-                          item.score >= 80 
-                            ? "bg-green-500 text-white border-green-600" 
-                            : item.score >= 55 
-                            ? "bg-amber-400 text-white border-amber-500" 
-                            : "bg-rose-500 text-white border-rose-600"
-                        }`}>
-                          {item.score}%
-                        </span>
-                        {item.score < 60 && (
-                          <span className="text-[9px] text-rose-600 font-bold uppercase tracking-tighter">Cần soát lại</span>
-                        )}
-                      </div>
-                    </td>
-                  </>
-                )}
+                {/* 5. Mã ERP */}
+                <td className="p-4 text-center">
+                  <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded font-mono text-[11px] font-bold">
+                    {item.erp || "---"}
+                  </span>
+                </td>
+
+                {/* 6. ĐVT chuẩn ERP */}
+                <td className="p-4 text-center text-sm font-bold text-blue-800">
+                  {item.dvt_he_thong || "---"}
+                </td>
+
+                {/* 7. Score */}
+                <td className="p-4 text-center">
+                  <span className={`font-black text-sm ${
+                    item.score >= 0.8 ? 'text-green-600' : 
+                    item.score >= 0.5 ? 'text-orange-500' : 'text-red-500'
+                  }`}>
+                    {item.score ? (item.score * 100).toFixed(1) + "%" : "0%"}
+                  </span>
+                </td>
               </tr>
             ))}
           </tbody>
