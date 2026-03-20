@@ -159,21 +159,50 @@ const handleStart = async () => {
 
     const dataForExcel = report.map((item, index) => ({
       "STT": item.stt || index + 1,
-      "Tên vật tư (Word)": item.tenWord,
-      "Thông số kỹ thuật (Word)": item.ts,
-      "Vật tư khớp nhất (Hệ thống)": item.matchHeThong,
-      "Mã vật tư (ERP)": item.erp,
-      "Độ tin cậy (%)": (item.score > 1 ? item.score : item.score * 100).toFixed(1) + "%",
-      "Ghi chú": item.score < 0.6 && item.score < 60 ? "Cần kiểm tra lại" : "Khớp"
+      // --- Dữ liệu gốc từ Word ---
+      "Tên vật tư (Word)": item.ten || "",
+      "Thông số (Word)": item.ts || "",
+      "ĐVT (Word)": item.dvt_word || "",
+
+      // --- Kết quả bóc tách & Đối chiếu ---
+      "Mã ERP": item.erp || "---",
+      "Vật tư khớp nhất (Hệ thống)": item.matchHeThong || "Không tìm thấy",
+      "ĐVT Hệ thống": item.dvt || "",
+      "Chủng loại": item.chung_loai || "",
+      
+      // --- Đánh giá AI ---
+      "Độ tin cậy (%)": (item.score > 0 ? item.score : 0).toFixed(1) + "%",
+      "Giải thích (AI)": (item.explain && typeof item.explain === 'string') 
+                    ? item.explain.replace(/<[^>]*>?/gm, '') 
+                    : "",
+      "Ghi chú": item.score >= 80 ? "Khớp hoàn toàn" : (item.score >= 50 ? "Cần kiểm tra lại" : "Lệch thông tin")
     }));
 
+    // Tạo worksheet
     const worksheet = XLSX.utils.json_to_sheet(dataForExcel);
+    
+    // Chỉnh độ rộng các cột cho dễ nhìn (Auto-fit cơ bản)
+    const wscols = [
+      { wch: 5 },  // STT
+      { wch: 35 }, // Tên Word
+      { wch: 30 }, // Thông số Word
+      { wch: 10 }, // ĐVT
+      { wch: 15 }, // ERP
+      { wch: 40 }, // Vật tư hệ thống
+      { wch: 12 }, // ĐVT Hệ thống
+      { wch: 15 }, // Chủng loại
+      { wch: 15 }, // Độ tin cậy
+      { wch: 50 }, // Giải thích
+      { wch: 20 }, // Ghi chú
+    ];
+    worksheet['!cols'] = wscols;
+
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "KetQuaThamDinh");
 
-    // Tạo tên file kèm timestamp để dễ quản lý tại cơ quan
-    const timeStr = new Date().getTime();
-    const fileName = `Ket_qua_tham_dinh_VT4_${timeStr}.xlsx`;
+    // Tên file theo định dạng nhà máy
+    const timeStr = new Date().toLocaleDateString('vi-VN').replace(/\//g, '-');
+    const fileName = `Bao_cao_Tham_dinh_Vinh_Tan_4_${timeStr}.xlsx`;
     XLSX.writeFile(workbook, fileName);
   };
 
