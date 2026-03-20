@@ -1,14 +1,13 @@
 # search_item/back_end/core/engine.py
 from __future__ import annotations
+from typing import List, Dict, Optional, Any
+import gc
 import pandas as pd
 import os
 import json
 import re
-from typing import List, Dict, Optional, Any
-
 import numpy as np
 import torch
-
 from .config import RankConfig
 from .helpers import (
     clean_query_text,
@@ -57,6 +56,10 @@ class HybridSearchEngine:
         # 4. Cấu hình Model & Index
         local_bge_path = os.path.join(backend_dir, "AI_models", "BGE")
         final_bi_model = model_path or (local_bge_path if os.path.exists(local_bge_path) else "keepitreal/vietnamese-sbert")
+        
+        
+        local_cross_path = os.path.join(backend_dir, "AI_models", "cross-encoder")
+        final_cross_model = local_cross_path if os.path.exists(local_cross_path) else "cross-encoder/ms-marco-MiniLM-L-6-v2"
         self.index_dir = index_dir or os.path.join(backend_dir, "vattu_index")
 
         # 5. Khởi tạo các Sub-modules (Linh kiện)
@@ -65,13 +68,19 @@ class HybridSearchEngine:
         # Scorers (Bi + Cross Encoder)
         self.scorers = create_scorers(
             bi_model_path=final_bi_model,
-            cross_model_path="cross-encoder/ms-marco-MiniLM-L-6-v2",
+            cross_model_path=final_cross_model,
             device=device,
             bi_batch=16,
             cross_batch=16,
             cross_is_logit=self.cfg.cross_is_logit,
             threads=num_threads,
         )
+        # --- CHÈN VÀO ĐÂY: Dọn dẹp RAM ngay sau khi nạp Model ---
+        
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        # -------------------------------------------------------
 
         # Rules & Ranker (Trọng tài & Bộ não hợp điểm)
         self.rules = BusinessRules(

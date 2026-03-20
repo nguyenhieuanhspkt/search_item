@@ -1,7 +1,7 @@
 // src/api_service.js
 import axios from "axios";
 
-const API_BASE = "http://10.156.43.54:8000";
+const API_BASE = import.meta.env.VITE_API_URL
 
 const api = {
   // Kiểm tra trạng thái hệ thống

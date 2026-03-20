@@ -89,10 +89,9 @@ class BulkMatcher:
                     "dvt_he_thong": "---",
                     "chung_loai": "---",
                     "erp": "---",
-                    "score": round(best.get('final_score', 0), 2),
-                    "explain": best.get('explain'), # THÊM DÒNG NÀY để đẩy về Frontend
-                    "diff_html": diff_html,
-                    "full_stock_info": best
+                    "score": 0,
+                    "diff_html": "<span style='color:red'>Không có kết quả phù hợp</span>",
+                    "full_stock_info": None
                 })
                 
         return final_reports

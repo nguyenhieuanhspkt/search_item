@@ -68,7 +68,8 @@ const handleStart = async () => {
       }));
 
       // 2. Sử dụng FETCH để hứng Stream (Thay vì api_service)
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/bulk-match`, {
+      const API_URL = import.meta.env.VITE_API_URL
+      const response = await fetch(`${API_URL}/api/bulk-match`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
