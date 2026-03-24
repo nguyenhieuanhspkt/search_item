@@ -1,14 +1,53 @@
 // src/api_service.js
 import axios from "axios";
-
+import { Meilisearch } from "meilisearch"; // Thư viện vừa cài
 const API_BASE = import.meta.env.VITE_API_URL
 console.log("Backend đang trỏ vào:", API_BASE); // Dòng này để Hiếu kiểm tra trong F12
+
+// 1. CẤU HÌNH GỌI THẲNG CỔNG 7700 (Docker Meilisearch)
+const meiliClient = new Meilisearch({
+  host: "http://10.156.43.54:7700", // Thay 127.0.0.1 bằng IP thật của máy cơ quan
+  apiKey: "HieuVinhTan4_2026",
+});
+
 const apiClient = axios.create({
   baseURL: API_BASE,
   timeout: 6000, // Tăng lên 15s vì nạp AI lần đầu sẽ lâu
 });
 
 const api = {
+
+  searchVattu: async (query) => {
+    try {
+      const index = meiliClient.index("vattu_vintan4");
+      const search = await index.search(query, {
+        limit: 20,
+        // Hiếu có thể thêm các tùy chọn lọc ở đây nếu cần
+      });
+      return search.hits;
+    } catch (error) {
+      console.error("Lỗi kết nối Meilisearch 7700:", error);
+      return [];
+    }
+  },
+  searchMeilisearch: async (query) => {
+    try {
+      const index = meiliClient.index("vattu_vintan4");
+      // Cấu hình cơ bản nhất: Tìm mọi thứ, ở mọi nơi
+      const search = await index.search(query, {
+        limit: 10,
+        // matchingStrategy: "none" sẽ tìm theo kiểu "có chữ nào hay chữ đó"
+        matchingStrategy: "all", 
+        // Cho phép sai lệch ký tự (typo) để bắt được các mã có dấu chấm/gạch
+        attributesToSearchOn: ["*"], 
+      });
+      return search;
+    } catch (error) {
+      console.error("Lỗi Meilisearch:", error);
+      return { hits: [] };
+    }
+  },
+
   // Kiểm tra trạng thái hệ thống
   getSystemStatus: async () => {
     try {
