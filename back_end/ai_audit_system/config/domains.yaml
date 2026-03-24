@@ -1,0 +1,32 @@
+# config/domains.yaml
+
+domain_rules:
+  valve:
+    keywords:
+      [
+        "valve",
+        "van cau",
+        "globe",
+        "gate valve",
+        "ball valve",
+        "bonnet",
+        "stem",
+      ]
+
+  sootblower:
+    keywords: ["ik-525", "sootblower", "feed tube", "lance hub", "poppet"]
+
+  compressor:
+    keywords: ["atlas", "copco", "filter", "oil pump", "zr200", "element"]
+
+  mechanical:
+    keywords: ["bearing", "vong bi", "stud", "bolt", "packing", "seal"]
+
+  steel:
+    keywords: ["ar500", "hardox", "wear plate", "thep tam"]
+
+  electrical:
+    keywords: ["sensor", "transducer", "cable", "connector"]
+
+  general:
+    keywords: []

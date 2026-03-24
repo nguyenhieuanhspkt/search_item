@@ -1,0 +1,23 @@
+# config/materials.yaml
+
+materials:
+  - canonical: "sus304 / inox 304 / stainless steel 304"
+    aliases: ["sus304", "ss304", "inox304", "304", "stainless 304"]
+
+  - canonical: "sus316 / inox 316 / stainless steel 316"
+    aliases: ["sus316", "ss316", "316", "stainless 316"]
+
+  - canonical: "graphite"
+    aliases: ["graphite", "grafit", "gioang graphit"]
+
+  - canonical: "ptfe / teflon"
+    aliases: ["ptfe", "teflon"]
+
+  - canonical: "a105"
+    aliases: ["a105", "astm a105"]
+
+  - canonical: "ca40 / a743-ca40"
+    aliases: ["ca40", "a743 ca40", "astm a743-ca40"]
+
+  - canonical: "c276 / hastelloy c276"
+    aliases: ["c276", "hastelloy c276"]

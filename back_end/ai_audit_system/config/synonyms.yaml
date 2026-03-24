@@ -1,0 +1,45 @@
+groups:
+  # --- NHÓM 1: BUNG SONG NGỮ (Để AI hiểu ngữ nghĩa) ---
+  - canonical: "vòng bi / bearing"
+    terms: ["vòng bi", "v.bi", "ổ lăn", "ball bearing", "roller bearing"]
+
+  - canonical: "van cầu / globe valve"
+    terms: ["van cầu", "v.cau", "poppet valve"]
+
+  - canonical: "bộ thổi bụi / sootblower"
+    terms: ["bộ thổi bụi", "bo thoi bui", "sootblower", "ik-525-dm", "ik-525"]
+
+  - canonical: "tấm đệm / gasket"
+    terms: ["tấm đệm", "tam dem", "gasket", "gioăng"]
+
+  # --- NHÓM 2: XÓA TỪ RÁC (STOPWORDS) ---
+  # Quan trọng: Canonical để "" sẽ giúp xóa sạch các từ này
+  - canonical: ""
+    terms:
+      - "sử dụng cho"
+      - "su dung cho"
+      - "vị trí của"
+      - "vi tri cua"
+      - "bản vẽ đính kèm"
+      - "ban ve dinh kem"
+      - "vị trí"
+      - "vi tri"
+      - "item no"
+      - "item"
+      - "part no"
+      - "order no"
+      - "model"
+      - "nsx"
+      - "nxs"
+      - "của"
+      - "dùng cho"
+      - "no."
+
+# --- NHÓM 3: TỪ ĐA NGHĨA (Nếu bạn có dùng) ---
+ambiguous_terms:
+  - term: "bc"
+    mappings:
+      - domain: "he_thong_thai_tro"
+        canonical: "băng chuyền / conveyor"
+      - domain: "tu_dong_hoa"
+        canonical: "bộ chuyển đổi / converter"

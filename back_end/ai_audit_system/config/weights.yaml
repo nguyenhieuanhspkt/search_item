@@ -1,0 +1,11 @@
+# config/weights.yaml
+
+rrf:
+  k: 60 # RRF constant để phân rã rank
+
+scoring:
+  semantic_weight: 0.40
+  part_number_boost: 0.45
+  material_boost: 0.15
+  dimension_boost: 0.10
+  keyword_boost: 0.05

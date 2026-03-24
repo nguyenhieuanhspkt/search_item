@@ -1,0 +1,9 @@
+pandas
+pyyaml
+fastembed
+faiss-cpu
+regex
+numpy
+tqdm
+openpyxl
+

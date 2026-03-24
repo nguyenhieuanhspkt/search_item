@@ -1,0 +1,14 @@
+# config/units.yaml
+
+units:
+  - canonical: "cai"
+    terms: ["cái", "cai", "chiếc", "pcs"]
+
+  - canonical: "bo"
+    terms: ["bộ", "bo", "set", "kit"]
+
+  - canonical: "tam"
+    terms: ["tấm", "tam"]
+
+  - canonical: "cay"
+    terms: ["cây", "cay", "length"]
