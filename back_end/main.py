@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from docx import Document
-
+is_model_loaded = False
 # =========================================================
 # 0) Thiết lập môi trường & sys.path
 # =========================================================
@@ -135,6 +135,7 @@ async def ensure_engines(mode: str = "combined"):
                 except Exception as e:
                     print(f"⚠️ Không thể khởi tạo BulkMatcher: {e}")
             print("--- ✅ Legacy AI Engine: Sẵn sàng ---")
+        is_model_loaded = True
 
 
 # =========================================================
@@ -383,6 +384,48 @@ async def shutdown_event():
 # =========================================================
 # 9) Dev entrypoint (không khuyến nghị --reload trong prod)
 # =========================================================
+
+
+@app.post("/api/bulk-match")
+async def handle_bulk_match(items: List[MaterialInput]):
+    if not is_model_loaded or bulk_matcher is None:
+        return {"status": "error", "message": "AI chưa sẵn sàng hoặc chưa nạp Index."}
+    
+    def generate_results():
+        try:
+            input_data = [item.dict() for item in items]
+            total = len(input_data)
+            
+            # --- PHÒNG THỦ TẠI ĐÂY ---
+            if total == 0:
+                yield f"data: {json.dumps({'status': 'info', 'message': 'Danh sách trống'}, ensure_ascii=False)}\n\n"
+                return
+
+            all_results = []
+            batch_size = 20
+            percent = 0  # <--- KHỞI TẠO BIẾN Ở ĐÂY ĐỂ TRÁNH LỖI
+            
+            for i in range(0, total, batch_size):
+                chunk = input_data[i : i + batch_size]
+                chunk_results = bulk_matcher.process_data(chunk)
+                all_results.extend(chunk_results)
+                
+                current_count = min(i + batch_size, total)
+                percent = round((current_count / total) * 100, 2)
+                
+                yield f"data: {json.dumps({'status': 'progress', 'percent': percent, 'current': current_count, 'total': total}, ensure_ascii=False)}\n\n"
+            
+            # Gửi kết quả cuối cùng
+            yield f"data: {json.dumps({'status': 'success', 'data': all_results}, ensure_ascii=False)}\n\n"
+            
+        except Exception as e:
+            # Nếu lỗi xảy ra, print ra console để mình còn biết đường sửa tiếp
+            import traceback
+            print(f"🔥 LỖI TẠI MAIN: {str(e)}")
+            print(traceback.format_exc()) # Dòng này sẽ hiện chi tiết lỗi nằm ở dòng nào luôn
+            yield f"data: {json.dumps({'status': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(generate_results(), media_type="text/event-stream")
 
 if __name__ == "__main__":
     import uvicorn
