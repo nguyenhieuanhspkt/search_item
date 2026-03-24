@@ -1,70 +1,92 @@
-# main.py
-
 import os
+import sys
 import pandas as pd
 from pathlib import Path
-from pipeline import MaterialAuditPipeline
 
 # ============================================================
-# 1. XỬ LÝ ĐƯỜNG DẪN ĐỘNG (Dùng cho máy cơ quan & cá nhân)
+# 1. THIẾT LẬP ĐƯỜNG DẪN (PATH SETUP)
 # ============================================================
-# Vị trí file hiện tại: search_item/back_end/ai_audit_system/main.py
+# Đường dẫn file main.py hiện tại
 current_file = Path(__file__).resolve()
+# Gốc dự án: ai_audit_system/
+PROJECT_ROOT = current_file.parent 
 
-# Root của back_end: search_item/back_end/
-back_end_root = current_file.parents[1] 
+# Thêm PROJECT_ROOT vào sys.path để import được pipeline.py
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-# Đường dẫn đến các file Excel theo yêu cầu của bạn
-ERP_MASTER = back_end_root / "Data_For_Meili.xlsx"
-INPUT_FILE = back_end_root / "Your_102_items.xlsx"
+try:
+    from pipeline import MaterialAuditPipeline
+except ImportError as e:
+    print(f"❌ Lỗi Import: {e}. Hãy đảm bảo main.py và pipeline.py cùng nằm trong ai_audit_system/")
+    sys.exit(1)
 
-# Đường dẫn lưu FAISS Index (lưu tạm trong folder data của ai_audit_system)
-DATA_DIR = current_file.parent / "data"
-DATA_DIR.mkdir(exist_ok=True) # Tạo folder data nếu chưa có
+# --- ĐỊNH VỊ CÁC FILE DỮ LIỆU ---
+# Theo đường dẫn Hiếu cung cấp: search_item\back_end\file 102
+# Giả sử ai_audit_system nằm trong back_end/
+BACKEND_DIR = PROJECT_ROOT.parent 
+INPUT_FILE = BACKEND_DIR / "Your_102_items.xlsx"
+ERP_MASTER  = PROJECT_ROOT / "data" / "raw" / "Data_For_Meili.xlsx"
 
-INDEX_FILE = DATA_DIR / "faiss.index"
-META_FILE  = DATA_DIR / "faiss_meta.json"
+# Nơi chứa Index từ Colab
+PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
+INDEX_FILE = PROCESSED_DIR / "faiss.index"
+META_FILE  = PROCESSED_DIR / "faiss_meta.json"
 
-# File kết quả xuất ra cùng cấp với file main.py
-OUTPUT_FILE = current_file.parent / "ERP_Suggestion_Output.xlsx"
+# File kết quả xuất ra
+OUTPUT_FILE = PROJECT_ROOT / "ERP_Suggestion_Output.xlsx"
 
 # ============================================================
-# 2. HÀM THỰC THI CHÍNH
+# 2. CHƯƠNG TRÌNH CHÍNH
 # ============================================================
 def main():
-    # Khởi tạo Pipeline với đường dẫn config tương đối
-    config_path = current_file.parent / "config"
-    pipe = MaterialAuditPipeline(config_path=str(config_path))
+    print("="*60)
+    print("🚀 HỆ THỐNG THẨM ĐỊNH VẬT TƯ V6.0 - AUTO AUDIT")
+    print("="*60)
 
-    # Kiểm tra sự tồn tại của file Master trước khi chạy
-    if not ERP_MASTER.exists():
-        print(f"❌ Lỗi: Không tìm thấy file ERP Master tại {ERP_MASTER}")
-        return
+    # Khởi tạo Pipeline
+    pipe = MaterialAuditPipeline(config_path="config")
 
-    # Nếu không có index → build index
-    if not INDEX_FILE.exists():
-        print("⚙️ No FAISS index found → building index...")
-        # Ép kiểu Path sang String để các thư viện như pandas/faiss đọc được
+    # 1. NẠP DỮ LIỆU AI (Ưu tiên từ Colab)
+    if INDEX_FILE.exists() and META_FILE.exists():
+        print(f"✅ Đang nạp bộ nhớ AI từ Colab...")
+        pipe.load_index(str(INDEX_FILE), str(META_FILE))
+    else:
+        print("⚠️  Không thấy file index. Đang tiến hành Build lại từ ERP Master...")
+        if not ERP_MASTER.exists():
+            print(f"❌ Lỗi: Không tìm thấy file gốc tại {ERP_MASTER}")
+            return
         pipe.build_index(str(ERP_MASTER), str(INDEX_FILE), str(META_FILE))
 
-    # Load FAISS
-    pipe.load_index(str(INDEX_FILE), str(META_FILE))
-
-    # Load input list
+    # 2. ĐỌC FILE 102 MÓN
     if not INPUT_FILE.exists():
-        print(f"❌ Lỗi: Không tìm thấy file Input tại {INPUT_FILE}")
+        print(f"❌ Lỗi: Không tìm thấy file đầu vào tại:\n{INPUT_FILE}")
         return
         
-    df_input = pd.read_excel(str(INPUT_FILE), engine="openpyxl")
+    print(f"📖 Đang đọc danh sách thẩm định: {INPUT_FILE.name}")
+    # Đọc file với đúng định dạng cột từ ảnh bạn gửi
+    try:
+        df_input = pd.read_excel(INPUT_FILE, engine="openpyxl")
+        
+        # Kiểm tra nhanh xem có đúng cột không
+        required_cols = ['STT', 'Mã ERP', 'Tên', 'TS']
+        if not all(col in df_input.columns for col in required_cols):
+            print(f"⚠️ Cảnh báo: File Excel thiếu một số cột tiêu chuẩn {required_cols}")
+            print(f"🔍 Các cột hiện có: {list(df_input.columns)}")
 
-    # Run pipeline
-    print("🚀 Running AI Thẩm định Vật tư...")
-    df_out = pipe.process(df_input)
+        # 3. CHẠY THẨM ĐỊNH
+        print(f"🔍 Bắt đầu AI Audit cho {len(df_input)} hạng mục...")
+        df_out = pipe.process(df_input)
 
-    # Save output
-    df_out.to_excel(str(OUTPUT_FILE), index=False)
-    print(f"🎉 Done. Output saved → {OUTPUT_FILE}")
+        # 4. XUẤT KẾT QUẢ
+        df_out.to_excel(OUTPUT_FILE, index=False)
+        print("\n" + "="*60)
+        print(f"✨ HOÀN THÀNH!")
+        print(f"💾 Kết quả lưu tại: {OUTPUT_FILE.name}")
+        print("="*60)
 
+    except Exception as e:
+        print(f"❌ Lỗi khi xử lý file Excel: {e}")
 
 if __name__ == "__main__":
     main()
