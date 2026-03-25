@@ -1,0 +1,17 @@
+# Ignore python virtual environments
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Ignore data and models (Nên để data ở ngoài hoặc mount qua Volume)
+data/
+models/
+*.xlsx
+*.csv
+
+# Ignore git and IDE config
+.git/
+.vscode/
+.idea/

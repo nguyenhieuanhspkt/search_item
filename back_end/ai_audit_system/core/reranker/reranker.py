@@ -46,32 +46,38 @@ class Reranker:
     def extract_features(self, text: str):
         text_l = text.lower()
 
-        # Part numbers
+        # 1. Part numbers: Cải tiến Regex để bắt cả mã đơn giản (chỉ chữ và số)
+        # Regex cũ của Hiếu hơi gắt, chỉ bắt mã có dấu gạch/chấm.
+        # Regex mới: Bắt các chuỗi có cả chữ và số, dài từ 4 ký tự trở lên (tránh bắt nhầm từ thường)
         part_numbers = re.findall(r"[a-z0-9]{2,}(?:[-_/\.]?[a-z0-9]{2,})+", text_l)
+        # Bổ sung thêm các mã hiệu kiểu dính liền (Vd: LHB66T)
+        simple_codes = re.findall(r"\b(?=[a-z]*[0-9])(?=[0-9]*[a-z])[a-z0-9]{4,}\b", text_l)
+        all_pns = list(set(part_numbers + simple_codes))
 
-        # DN / PN
+        # 2. Quy cách kỹ thuật (DN, PN, Kích thước)
         dn = re.findall(r"\bdn\s*\d+", text_l)
         pn = re.findall(r"\bpn\s*\d+", text_l)
+        # Bắt thêm kích thước 2D (40x50) hoặc 3D (40x50x25)
+        dims = re.findall(r"\d+\s*x\s*\d+(?:\s*x\s*\d+)?", text_l)
 
-        # 3D dims 40x50x25
-        dims = re.findall(r"\d+\s*x\s*\d+\s*x\s*\d+", text_l)
-
-        # Materials
-        mats = []
-        for mat in self.materials["materials"]:
+        # 3. Vật liệu (Giữ nguyên logic của Hiếu nhưng dùng set để tránh lặp)
+        mats = set()
+        for mat in self.materials.get("materials", []):
             for alias in mat["aliases"]:
-                if alias in text_l:
-                    mats.append(mat["canonical"])
+                if f" {alias} " in f" {text_l} ": # Khớp chính xác từ để tránh bắt nhầm
+                    mats.add(mat["canonical"])
 
-        # Important keywords (after mapping)
-        keywords = [w for w in text_l.split() if len(w) > 3]
+        # 4. Từ khóa quan trọng (Keywords)
+        # Loại bỏ các từ vô nghĩa (stop words) thường gặp trong vật tư
+        stop_words = {'cho', 'của', 'với', 'dùng', 'loại', 'theo', 'mới', 'bản', 'vẽ'}
+        keywords = [w for w in text_l.split() if len(w) > 2 and w not in stop_words]
 
         return {
-            "part_numbers": part_numbers,
+            "part_numbers": all_pns,
             "dn": dn,
             "pn": pn,
             "dimensions": dims,
-            "materials": mats,
+            "materials": list(mats),
             "keywords": keywords,
         }
 

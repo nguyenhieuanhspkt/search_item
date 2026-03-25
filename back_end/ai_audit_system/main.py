@@ -20,7 +20,7 @@ except ImportError as e:
 
 # --- ĐỊNH VỊ CÁC FILE DỮ LIỆU ---
 # Sửa lại đường dẫn INPUT_FILE cho đúng vị trí thực tế của file 102 món
-INPUT_FILE = PROJECT_ROOT.parent / "Your_102_items.xlsx"
+INPUT_FILE = PROJECT_ROOT / "data" / "raw" / "Your_102_items.xlsx"
 ERP_MASTER  = PROJECT_ROOT / "data" / "raw" / "Data_For_Meili.xlsx"
 
 # Nơi chứa Index từ Colab
@@ -30,7 +30,7 @@ INDEX_FILE = PROCESSED_DIR / "faiss.index"
 META_FILE  = PROCESSED_DIR / "faiss_meta.pkl" 
 
 # File kết quả xuất ra
-OUTPUT_FILE = PROJECT_ROOT / "ERP_Suggestion_Output.xlsx"
+OUTPUT_FILE = PROJECT_ROOT /"processed"/"ERP_Suggestion_Output.xlsx"
 
 # ============================================================
 # 2. CHƯƠNG TRÌNH CHÍNH

@@ -1,7 +1,16 @@
-streamlit
-pandas
-numpy
-whoosh
-sentence-transformers
+# Tìm ở kho PyTorch CPU trước
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Để pip tự tìm bản 2.x.x nào mới nhất mà có +cpu
 torch
-python-multipart
+torchvision
+torchaudio
+
+# Các thư viện phụ trợ
+fastapi
+uvicorn
+pandas
+openpyxl
+pyyaml
+fastembed
+faiss-cpu

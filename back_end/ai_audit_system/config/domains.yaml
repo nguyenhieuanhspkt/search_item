@@ -1,32 +1,88 @@
-# config/domains.yaml
-
 domain_rules:
   valve:
     keywords:
-      [
-        "valve",
-        "van cau",
-        "globe",
-        "gate valve",
-        "ball valve",
-        "bonnet",
-        "stem",
-      ]
-
+    - valve
+    - van cau
+    - globe
+    - gate valve
+    - ball valve
+    - bonnet
+    - stem
+    - van
+    - ball
+    - gate
+    - actuator
+    - solenoid
+    - diaphragm
+    - check
+    - valves
   sootblower:
-    keywords: ["ik-525", "sootblower", "feed tube", "lance hub", "poppet"]
-
+    keywords:
+    - ik-525
+    - sootblower
+    - feed tube
+    - lance hub
+    - poppet
+    - tube
+    - balance
+    - blower
   compressor:
-    keywords: ["atlas", "copco", "filter", "oil pump", "zr200", "element"]
-
+    keywords:
+    - atlas
+    - copco
+    - filter
+    - oil pump
+    - zr200
+    - element
   mechanical:
-    keywords: ["bearing", "vong bi", "stud", "bolt", "packing", "seal"]
-
+    keywords:
+    - bearing
+    - vong bi
+    - stud
+    - bolt
+    - packing
+    - seal
+    - gasket
+    - oring
+    - coupling
+    - sealing
+    - nut
+    - bushing
+    - washer
+    - joint
+    - screw
+    - bizhub
   steel:
-    keywords: ["ar500", "hardox", "wear plate", "thep tam"]
-
+    keywords:
+    - ar500
+    - hardox
+    - wear plate
+    - thep tam
+    - inox
+    - kalmetall
+    - plate
+    - steel
+    - sus
+    - metal
   electrical:
-    keywords: ["sensor", "transducer", "cable", "connector"]
-
+    keywords:
+    - sensor
+    - transducer
+    - cable
+    - connector
+    - switch
+    - motor
+    - module
+    - relay
+    - coil
+    - voltage
   general:
     keywords: []
+  brands:
+    keywords:
+    - chesterton
+    - philips
+    - komatsu
+    - martin
+    - leco
+    - skf

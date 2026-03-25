@@ -12,6 +12,8 @@
 # │   ├── normalize.py        # Module em vừa viết
 # │   ├── embedder.py         # Chạy BGE-M3 (FastEmbed/ONNX)
 # │   └── vector_store.py     # Quản lý FAISS (Index/Search)
+# │   ├── reranker.py         # Chạy BGE-M3 (FastEmbed/ONNX)
+
 # │
 # ├── data/                   # Dữ liệu thực tế
 # │   ├── raw/                # File Excel gốc (ERP Master, Input)

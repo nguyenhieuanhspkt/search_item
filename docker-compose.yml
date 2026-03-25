@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  # 1. Quái vật AI Backend (FastAPI)
+  backend:
+    build: 
+      context: ./back_end   # Điểm bắt đầu build là thư mục back_end
+      dockerfile: Dockerfile # Tìm Dockerfile nằm trong đó
+    ports:
+      - "8000:8000"
+    volumes:
+      # Đồng bộ toàn bộ code để sửa code không cần build lại
+      - ./back_end:/app 
+      # Giữ lại các volume dữ liệu của Hiếu
+      - ./back_end/ai_audit_system/data/processed:/app/ai_audit_system/data/processed
+      - ./back_end/ai_audit_system/config:/app/ai_audit_system/config
+    environment:
+      - MEILI_URL=http://meilisearch:7700
+    depends_on:
+      - meilisearch
+
+  # 2. Giao diện Frontend (React/Vite)
+  frontend:
+    build: 
+      context: ./front_end  # Docker sẽ nhảy vào thư mục front_end để tìm Dockerfile
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./front_end:/app    # Sửa giao diện bên ngoài, trình duyệt tự đổi (Hot Reload)
+      - /app/node_modules   # Giữ lại node_modules trong Docker, không đè bằng máy thật
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+  # 3. Máy chủ tìm kiếm Meilisearch
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    ports:
+      - "7700:7700"
+    environment:
+      - MEILI_MASTER_KEY=masterKey # Meili cần key để bảo mật nhẹ
+    volumes:
+      - ./meili_data:/meili_data

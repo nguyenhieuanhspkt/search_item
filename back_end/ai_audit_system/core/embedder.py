@@ -5,7 +5,7 @@ from sentence_transformers import SentenceTransformer
 class DataEmbedder:
     def __init__(self):
         # Đường dẫn tới folder BGE Hiếu đã chụp ảnh
-        model_path = r"D:\TaskApp_pro\search_item\back_end\AI_models\BGE"
+        model_path = r"D:\TaskApp_kiet\TaskApp\search_item2\search_item\back_end\AI_models\BGE"
         
         print(f"🚀 Đang nạp BGE-M3 bằng PyTorch từ: {model_path}")
         

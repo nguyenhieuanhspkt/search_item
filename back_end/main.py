@@ -1,3 +1,5 @@
+
+
 from routers import transfer
 # main.py
 import os
@@ -8,6 +10,8 @@ import json
 import shutil
 import asyncio
 from typing import List, Optional
+# Bây giờ Hiếu có thể import logic từ pipeline hoặc main của AI
+from ai_audit_system.pipeline import MaterialAuditPipeline
 
 from fastapi import FastAPI, Form, File, UploadFile
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
@@ -185,6 +189,23 @@ def merge_results(c2_hits, leg_hits):
 # =========================================================
 # 6) Endpoints
 # =========================================================
+
+pipe = MaterialAuditPipeline(config_path=str(BASE_DIR / "ai_audit_system" / "config"))
+INDEX_PATH = BASE_DIR / "ai_audit_system" / "data" / "processed" / "faiss.index"
+META_PATH = BASE_DIR / "ai_audit_system" / "data" / "processed" / "faiss_meta.pkl"
+pipe.load_index(str(INDEX_PATH), str(META_PATH))
+
+@app.post("/audit")
+async def audit_materials(file: UploadFile = File(...)):
+    # 1. Đọc file Excel từ Frontend gửi lên
+    contents = await file.read()
+    df_input = pd.read_excel(io.BytesIO(contents))
+    
+    # 2. Chạy logic Thẩm định (Cái này là ép ai_audit_system vào đây)
+    df_output = pipe.process(df_input)
+    
+    # 3. Trả kết quả về dưới dạng JSON cho React hiển thị
+    return df_output.to_dict(orient="records")
 
 @app.get("/system-status")
 async def get_status():

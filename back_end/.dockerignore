@@ -1,0 +1,11 @@
+# Chặn các file model nặng
+*.bin
+*.onnx
+*.onnx_data
+*.safetensors
+*.msgpack
+
+# Chặn thư mục chứa model (nếu bác để trong folder riêng)
+**/models/
+**/sentence_transformers/
+**/.cache/

@@ -1,0 +1,17 @@
+FROM node:18-slim
+
+WORKDIR /app
+
+# Dùng dấu * để linh hoạt hơn
+COPY package*.json ./
+
+# Cài đặt (Dùng --frozen-lockfile nếu có lock file, hoặc cứ npm install)
+RUN npm install
+
+# Copy code (Nhớ dùng .dockerignore để loại bỏ node_modules máy thật)
+COPY . .
+
+EXPOSE 3000
+
+# Chạy Vite
+CMD ["npm", "run", "dev", "--", "--port", "3000", "--host", "0.0.0.0"]
