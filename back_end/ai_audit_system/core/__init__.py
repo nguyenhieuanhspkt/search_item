@@ -29,6 +29,8 @@
 # └── requirements.txt        # Danh sách thư viện (pandas, pyyaml, fastembed, faiss-cpu...)
 # https://colab.research.google.com/drive/1q2-dPyWgZIEr6r_UsIk1cXp30OtZTWJf#scrollTo=V3i8KtKeGlt-
 
+# gemini
+# https://gemini.google.com/app/dc640e6aa3f41aca
 # # FAISS
 # FAISS (viết tắt của Facebook AI Similarity Search) là một thư viện mã nguồn mở được phát triển bởi nhóm
 # nghiên cứu AI của Meta (Facebook). Nó được thiết kế đặc biệt để giải quyết bài toán:

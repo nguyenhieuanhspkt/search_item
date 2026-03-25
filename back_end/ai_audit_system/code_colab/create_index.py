@@ -1,3 +1,6 @@
+# 1. Cài đặt các thư viện (Bản dành riêng cho CPU)
+!pip install faiss-cpu pandas openpyxl pyyaml transformers torch tqdm
+
 import os
 import pandas as pd
 import numpy as np
@@ -6,27 +9,18 @@ import faiss
 import json
 import re
 import yaml
+import pickle
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModel
 from google.colab import files
 
 # ============================================================
-# 1. CẤU HÌNH NORMALIZER V6.0 (GIỮ NGUYÊN LOGIC ƯU TIÊN MÃ HIỆU)
+# 1. CẤU HÌNH NORMALIZER (GIỮ NGUYÊN LOGIC MODEL/THÔNG SỐ)
 # ============================================================
 class Normalizer:
     def __init__(self, config_path="config"):
-        self.config_path = config_path
-        self.synonyms = self._load_yaml("synonyms.yaml")
-        self.materials = self._load_yaml("materials.yaml")
-        self.units = self._load_yaml("units.yaml")
-        self.domains = self._load_yaml("domains.yaml")
-
-    def _load_yaml(self, filename):
-        path = os.path.join(self.config_path, filename)
-        if not os.path.exists(path): return {}
-        with open(path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f)
-
+        if not os.path.exists(config_path): os.makedirs(config_path)
+        
     def clean_basic(self, text: str) -> str:
         if not isinstance(text, str): return ""
         text = text.strip().lower()
@@ -42,70 +36,76 @@ class Normalizer:
         cleaned = self.clean_basic(text)
         tech_codes = self.extract_technical_codes(cleaned)
         code_str = " ".join(tech_codes)
-        # Ưu tiên mã hiệu lặp lại 2 lần ở đầu
         return re.sub(r"\s+", " ", f"{code_str} {code_str} {cleaned}").strip()
 
 # ============================================================
-# 2. KHỞI TẠO MODEL BGE-M3 QUA PYTORCH
+# 2. KHỞI TẠO MODEL BGE-M3 (CHẠY THUẦN CPU)
 # ============================================================
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Cưỡng ép dùng CPU kể cả khi Colab có GPU
+device = torch.device("cpu")
 model_name = "BAAI/bge-m3"
 
-print(f"📦 Đang tải model {model_name} lên {device}...")
+print(f"📦 Đang tải model {model_name} lên CPU...")
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModel.from_pretrained(model_name).to(device)
 model.eval()
 
-def get_embeddings(texts, batch_size=32):
+def get_embeddings(texts, batch_size=8): # Batch size nhỏ để CPU không bị treo
     all_embeddings = []
-    for i in tqdm(range(0, len(texts), batch_size), desc="🤖 Đang tạo Vector"):
+    for i in tqdm(range(0, len(texts), batch_size), desc="🤖 AI đang tạo Vector"):
         batch_texts = texts[i:i+batch_size]
         encoded_input = tokenizer(batch_texts, padding=True, truncation=True, return_tensors='pt', max_length=512).to(device)
         with torch.no_grad():
             model_output = model(**encoded_input)
-            # Lấy [CLS] token làm đại diện cho vector (chuẩn của BGE)
+            # Lấy [CLS] token và Normalize
             sentence_embeddings = model_output[0][:, 0]
-            # Normalize vector về độ dài 1 (để tính Cosine Similarity)
             sentence_embeddings = torch.nn.functional.normalize(sentence_embeddings, p=2, dim=1)
-            all_embeddings.append(sentence_embeddings.cpu().numpy())
+            all_embeddings.append(sentence_embeddings.numpy()) # CPU dùng trực tiếp numpy
     return np.vstack(all_embeddings)
 
 # ============================================================
-# 3. THỰC THI XỬ LÝ DỮ LIỆU
+# 3. XỬ LÝ DỮ LIỆU & XUẤT FILE (FULL CỘT GIÁ/DIỄN GIẢI)
 # ============================================================
-ERP_FILE = "Data_For_Meili.xlsx"
-CONFIG_FOLDER = "config"
+print("📂 Vui lòng chọn file 'Data_For_Meili.xlsx' (20,015 dòng):")
+uploaded = files.upload()
+ERP_FILE = list(uploaded.keys())[0]
 
-print("📖 Đọc dữ liệu ERP...")
+print("📖 Đang đọc dữ liệu...")
 df = pd.read_excel(ERP_FILE, engine="openpyxl")
-norm = Normalizer(CONFIG_FOLDER)
+df = df.fillna("") # Xử lý ô trống
 
-print("🛠️ Chuẩn hóa văn bản...")
+norm = Normalizer()
+
+# Tạo danh sách văn bản để AI "học"
+print("🛠️ Chuẩn hóa dữ liệu...")
 texts_to_embed = [norm.normalize(f"{str(r['Tên vật tư (NXT)'])} {str(r['Thông số kỹ thuật'])}") for _, r in df.iterrows()]
 
-print("🚀 Bắt đầu tạo Embedding với PyTorch...")
+# Tạo Vector
 embeddings = get_embeddings(texts_to_embed)
 
-print("🏗️ Xây dựng FAISS Index...")
+# Xây dựng Index FAISS cho CPU
+print("🏗️ Đang xây dựng bộ nhớ FAISS Index...")
 dimension = embeddings.shape[1]
-index = faiss.IndexFlatIP(dimension) # Inner Product + Normalized L2 = Cosine Similarity
+# IndexFlatIP là chuẩn nhất cho Cosine Similarity trên CPU
+index = faiss.IndexFlatIP(dimension) 
 index.add(embeddings.astype('float32'))
 
-print("💾 Lưu file kết quả...")
-faiss.write_index(index, "faiss.index")
+# Đóng gói Full Metadata (Thêm Giá, Diễn giải, Hợp đồng...)
+print("💾 Đóng gói Metadata đầy đủ...")
+meta_columns = [
+    'Mã vật tư', 'Tên vật tư (NXT)', 'Đơn Giá Nhập', 'Đơn vị tính', 
+    'Số Hợp Đồng/QĐ', 'Năm', 'Kho', 'Diễn Giải', 'Thông số kỹ thuật'
+]
+existing_cols = [c for c in meta_columns if c in df.columns]
+metadata = df[existing_cols].to_dict(orient='records')
 
-meta_columns = ['Mã vật tư', 'Tên vật tư (NXT)', 'Đơn vị tính', 'Thông số kỹ thuật']
-metadata = df[meta_columns].fillna("").to_dict(orient='records')
+# Lưu file
+faiss.write_index(index, "faiss.index")
+with open("faiss_meta.pkl", "wb") as f:
+    pickle.dump(metadata, f)
 with open("faiss_meta.json", "w", encoding="utf-8") as f:
     json.dump(metadata, f, ensure_ascii=False, indent=4)
 
-print("✅ Hoàn thành!")
+print("\n✅ HOÀN THÀNH! Hiếu tải 2 file .index và .pkl về máy nhé.")
 files.download("faiss.index")
-files.download("faiss_meta.json")
-
-
-
-
-# Quy trình tiếp theo: Hiếu chỉ cần lưu file này lại, sau đó mở main.py lên và tận hưởng kết quả "AI Audit" thế hệ mới. Những dòng khó như "Khớp giãn nở LHB6.6T" bây giờ sẽ được AI ưu tiên xử lý đúng model trước khi nhìn đến chữ "Khớp".
-
-# Hiếu đã sẵn sàng chạy thử main.py với bộ não mới chưa?
+files.download("faiss_meta.pkl")

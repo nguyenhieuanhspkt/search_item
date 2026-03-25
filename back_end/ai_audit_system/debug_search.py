@@ -40,21 +40,42 @@ def test_debug():
         return
 
     # --- ĐOẠN DEBUG QUAN TRỌNG NHẤT ---
+# --- ĐOẠN DEBUG QUAN TRỌNG NHẤT (V6.2 - AUTO DETECT) ---
     for i, hit in enumerate(hits):
-        print(f"\n--- KẾT QUẢ THỨ {i+1} ---")
-        print(f"📍 Kiểu dữ liệu của 'hit': {type(hit)}")
-        print(f"📍 Nội dung thô của 'hit': {hit}")
+        print(f"\n--- KẾT QUẢ THỨ {i+1} (Score: {hit.get('score', 0):.4f}) ---")
         
-        # Thử nghiệm cách truy cập
-        try:
-            print(f"✅ Thử truy cập hit.metadata: {hit.metadata if hasattr(hit, 'metadata') else 'KHÔNG CÓ ATTRIBUTE METADATA'}")
-        except Exception as e:
-            print(f"❌ Lỗi khi gọi .metadata: {e}")
-            
-        try:
-            print(f"✅ Thử truy cập hit['metadata']: {hit['metadata'] if isinstance(hit, dict) and 'metadata' in hit else 'KHÔNG PHẢI DICT HOẶC KHÔNG CÓ KEY METADATA'}")
-        except Exception as e:
-            print(f"❌ Lỗi khi gọi ['metadata']: {e}")
+        meta = hit.get('metadata', {})
+        
+        # 1. IN TẤT CẢ KEYS ĐỂ HIẾU KIỂM TRA Tên Cột Thực Tế
+        all_keys = list(meta.keys())
+        print(f"🔑 CÁC CỘT ĐANG CÓ TRONG FAISS: {all_keys}")
+
+        # 2. DÒ TÌM CỘT GIÁ (Ưu tiên 'Đơn Giá Nhập' của Hiếu)
+        # Thêm các biến thể nếu Excel viết hoa/thường khác nhau
+        price_keys = ['Đơn Giá Nhập', 'Đơn giá', 'Giá', 'Price', 'unit_price']
+        found_price = "❌ CHƯA CÓ TRONG FAISS"
+        
+        for pk in price_keys:
+            if pk in meta:
+                found_price = meta[pk]
+                print(f"✅ Đã tìm thấy giá ở cột: '{pk}'")
+                break
+        
+        # 3. DÒ TÌM CỘT DIỄN GIẢI / THÔNG SỐ
+        desc_keys = ['Thông số kỹ thuật', 'Diễn giải', 'Mô tả', 'Description']
+        found_desc = "❌ CHƯA CÓ TRONG FAISS"
+        
+        for dk in desc_keys:
+            if dk in meta:
+                found_desc = meta[dk]
+                print(f"✅ Đã tìm thấy diễn giải ở cột: '{dk}'")
+                break
+
+        # 4. IN KẾT QUẢ CUỐI CÙNG
+        print(f"📍 Mã vật tư: {meta.get('Mã vật tư', 'KHÔNG THẤY')}")
+        print(f"📍 Tên vật tư: {meta.get('Tên vật tư (NXT)', 'KHÔNG THẤY')}")
+        print(f"💰 Giá tìm thấy: {found_price}")
+        print(f"📝 Diễn giải: {found_desc}")
 
 if __name__ == "__main__":
     test_debug()

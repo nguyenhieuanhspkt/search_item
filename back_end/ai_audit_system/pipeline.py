@@ -127,27 +127,24 @@ class MaterialAuditPipeline:
 
         scored_results = []
         for hit in hits:
-            # VÌ DEBUG BÁO LÀ DICT, TA TRUY CẬP THEO KEY
-            # Dùng .get() để an toàn, không lo bị văng lỗi KeyError
             meta = hit.get('metadata', {})
             score_raw = hit.get('score', 0) 
             
-            # Lấy thông tin chi tiết từ trong meta
+            # --- LẤY THÊM DỮ LIỆU GIÁ VÀ DIỄN GIẢI ---
             m_name = meta.get('Tên vật tư (NXT)', '')
             m_spec = meta.get('Thông số kỹ thuật', '')
             m_code = meta.get('Mã vật tư', 'N/A')
             m_unit = meta.get('Đơn vị tính', 'N/A')
             
+            # Cột giá và diễn giải (Hiếu kiểm tra đúng tên cột trong file Excel 20015 dòng nhé)
+            m_price = meta.get('Đơn giá', meta.get('Giá', 0)) 
+            m_desc  = meta.get('Diễn giải', meta.get('Mô tả', ''))
+            
             m_text_full = f"{m_name} {m_spec}".strip()
             
-            # --- CHẠY BỘ 3 RERANKER ---
-            # 1. Extract
+            # --- CHẠY RERANKER ---
             m_feat = self.extractor.get_features(m_text_full)
-            
-            # 2. Scoring (Kết hợp score từ FAISS và bóc tách đặc tính)
             final_score = self.scorer.calculate(q_feat, m_feat, score_raw)
-            
-            # 3. Explain (Sinh lời phê AI)
             explanation = self.explainer.generate(q_feat, m_feat, final_score, self.threshold)
             
             scored_results.append({
@@ -155,6 +152,8 @@ class MaterialAuditPipeline:
                 "material_code": m_code,
                 "full_name": m_text_full,
                 "unit": m_unit,
+                "price": m_price,      # Thêm vào đây
+                "description": m_desc,  # Thêm vào đây
                 "explain": explanation
             })
         
@@ -166,7 +165,7 @@ class MaterialAuditPipeline:
         return scored_results
 
     def _format_output(self, row, best=None, error_msg=None):
-        """Format dòng dữ liệu cho DataFrame đầu ra"""
+        """Cập nhật cấu trúc bảng Excel đầu ra"""
         base = {
             "STT": row.get("STT", ""),
             "Tên gốc": row.get("Tên", ""),
@@ -180,17 +179,12 @@ class MaterialAuditPipeline:
                 "Mã ERP gợi ý": best["material_code"],
                 "Tên gợi ý": best["full_name"],
                 "Đơn vị": best["unit"],
+                "Giá ERP": best["price"],        # Cột mới
+                "Diễn giải ERP": best["description"], # Cột mới
                 "Độ tin cậy": round(best["score"], 4),
                 "Lời phê AI": best["explain"],
                 "Kết luận": "✅ ĐẠT"
             }
-        
-        return {
-            **base,
-            "Độ tin cậy": round(best["score"], 4) if best else 0,
-            "Lời phê AI": best["explain"] if best else "Không tìm thấy kết quả phù hợp trên ERP",
-            "Kết luận": "❌ CẦN TRA SOÁT"
-        }
 
     def process(self, df_input):
         """Hàm chính quét lô 102 món và trả về DataFrame"""
