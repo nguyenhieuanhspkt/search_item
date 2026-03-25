@@ -81,24 +81,28 @@ class VectorStore:
     # ----------------------------------------------------------------
     # LOAD INDEX + METADATA
     # ----------------------------------------------------------------
-    def load(self, index_path: str, metadata_path: str):
-        """
-        Khôi phục mô hình từ ổ đĩa.
-        """
+    def load(self, index_path, metadata_path):
+        import pickle
+        import json
+        import faiss
 
-        if not os.path.exists(index_path):
-            raise FileNotFoundError(f"Cannot find index: {index_path}")
+        # 1. Nạp Index FAISS
+        print(f"📂 Đang nạp Index: {index_path}")
+        self.index = faiss.read_index(str(index_path))
 
-        if not os.path.exists(metadata_path):
-            raise FileNotFoundError(f"Cannot find metadata: {metadata_path}")
+        # 2. Nạp Metadata (Tự động nhận diện PKL hoặc JSON)
+        print(f"📂 Đang nạp Metadata: {metadata_path}")
+        
+        if str(metadata_path).endswith('.pkl'):
+            # Nếu là file PKL thì dùng pickle để nạp (Dạng nhị phân 'rb')
+            with open(metadata_path, "rb") as f:
+                self.metadata = pickle.load(f)
+        else:
+            # Nếu là file JSON thì dùng json để nạp (Dạng văn bản 'r')
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                self.metadata = json.load(f)
 
-        self.index = faiss.read_index(index_path)
-
-        with open(metadata_path, "r", encoding="utf-8") as f:
-            self.metadata = json.load(f)
-
-        # FAISS không lưu dim trực tiếp -> đọc từ index
-        self.dim = self.index.d
+        print(f"🔧 FAISS Index & Metadata ({len(self.metadata)} dòng) đã sẵn sàng.")
 
 
     # ----------------------------------------------------------------
