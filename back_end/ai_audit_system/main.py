@@ -2,86 +2,111 @@ import os
 import sys
 import pandas as pd
 from pathlib import Path
+from datetime import datetime
 
 # ============================================================
 # 1. THIẾT LẬP ĐƯỜNG DẪN (PATH SETUP)
 # ============================================================
 current_file = Path(__file__).resolve()
-PROJECT_ROOT = current_file.parent 
+# AI_SYSTEM_DIR: folder 'ai_audit_system' (chứa pipeline.py)
+AI_SYSTEM_DIR = current_file.parent 
+# PROJECT_ROOT: lùi 4 tầng về 'TaskApp' (Dựa trên cấu trúc folder của Hiếu)
+PROJECT_ROOT = current_file.parents[4] 
 
+# Nạp AI_SYSTEM_DIR vào đầu danh sách tìm kiếm để gọi 'from pipeline ...'
+if str(AI_SYSTEM_DIR) not in sys.path:
+    sys.path.insert(0, str(AI_SYSTEM_DIR))
+
+# Nạp PROJECT_ROOT để hỗ trợ các import từ các folder con khác
 if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+    sys.path.append(str(PROJECT_ROOT))
 
+print("="*60)
+print(f"📍 Root dự án: {PROJECT_ROOT}")
+print(f"📍 AI System Path: {AI_SYSTEM_DIR}")
+
+# --- IMPORT PIPELINE ---
 try:
+    # Import class đã chuẩn hóa từ file pipeline.py
     from pipeline import MaterialAuditPipeline
-except ImportError as e:
-    print(f"❌ Lỗi Import: {e}. Hãy đảm bảo main.py và pipeline.py cùng nằm trong ai_audit_system/")
+    print("✅ Kết nối Pipeline thành công!")
+except Exception as e:
+    print(f"❌ Lỗi Import nghiêm trọng: {e}")
     sys.exit(1)
 
 # --- ĐỊNH VỊ CÁC FILE DỮ LIỆU ---
-# Sửa lại đường dẫn INPUT_FILE cho đúng vị trí thực tế của file 102 món
-INPUT_FILE = PROJECT_ROOT / "data" / "raw" / "Your_102_items.xlsx"
-ERP_MASTER  = PROJECT_ROOT / "data" / "raw" / "Data_For_Meili.xlsx"
+DATA_DIR = AI_SYSTEM_DIR / "data"
+INPUT_FILE = DATA_DIR / "raw" / "Your_102_items.xlsx"
+ERP_MASTER  = DATA_DIR / "raw" / "Data_For_Meili.xlsx"
 
-# Nơi chứa Index từ Colab
-PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
+# Nơi chứa Index FAISS (Bộ nhớ AI)
+PROCESSED_DIR = DATA_DIR / "processed"
 INDEX_FILE = PROCESSED_DIR / "faiss.index"
-# ĐỔI TÊN: Dùng .pkl để nạp siêu nhanh thay vì .json
 META_FILE  = PROCESSED_DIR / "faiss_meta.pkl" 
 
-# File kết quả xuất ra
-OUTPUT_FILE = PROJECT_ROOT /"processed"/"ERP_Suggestion_Output.xlsx"
+# File kết quả xuất ra Excel
+OUTPUT_FILE = PROCESSED_DIR / f"Ket_Qua_Tham_Dinh_{datetime.now().strftime('%d%m_%H%M')}.xlsx"
 
 # ============================================================
-# 2. CHƯƠNG TRÌNH CHÍNH
+# 2. CHƯƠNG TRÌNH CHÍNH (MAIN LOGIC)
 # ============================================================
 def main():
     print("="*60)
-    print("🚀 HỆ THỐNG THẨM ĐỊNH VẬT TƯ V6.0 - AUTO AUDIT")
+    print("🚀 HỆ THỐNG AI THẨM ĐỊNH VẬT TƯ - VĨNH TÂN 4")
+    print(f"⏰ Bắt đầu lúc: {datetime.now().strftime('%H:%M:%S')}")
     print("="*60)
 
-    # Khởi tạo Pipeline
-    pipe = MaterialAuditPipeline(config_path="config")
+    # 1. Khởi tạo Pipeline
+    try:
+        # Trỏ vào folder 'config' nằm cùng cấp với main.py
+        pipe = MaterialAuditPipeline(config_path="config")
+    except Exception as e:
+        print(f"❌ Lỗi khởi tạo Pipeline: {e}")
+        return
 
-    # 1. NẠP DỮ LIỆU AI (Ưu tiên nạp từ file đã xử lý trên Colab)
+    # 2. QUẢN LÝ BỘ NHỚ AI (FAISS)
     if INDEX_FILE.exists() and META_FILE.exists():
-        print(f"✅ Đang nạp bộ nhớ AI (Index & PKL) từ Colab...")
+        print(f"✅ Đang nạp Bộ nhớ AI từ: {INDEX_FILE.name}")
         pipe.load_index(str(INDEX_FILE), str(META_FILE))
     else:
-        print("⚠️  Không thấy file index hoặc meta.pkl. Đang tiến hành Build lại...")
+        print("⚠️  Không tìm thấy Bộ nhớ AI (FAISS). Đang tiến hành xây dựng mới...")
         if not ERP_MASTER.exists():
-            print(f"❌ Lỗi: Không tìm thấy file gốc tại {ERP_MASTER}")
+            print(f"❌ Lỗi: Không thấy file ERP gốc tại {ERP_MASTER}")
             return
+        
+        # Tự tạo folder processed nếu chưa có
+        PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
         pipe.build_index(str(ERP_MASTER), str(INDEX_FILE), str(META_FILE))
 
-    # 2. ĐỌC FILE 102 MÓN
+    # 3. ĐỌC DANH SÁCH 102 MÓN CẦN THẨM ĐỊNH
     if not INPUT_FILE.exists():
         print(f"❌ Lỗi: Không tìm thấy file đầu vào tại:\n{INPUT_FILE}")
         return
         
     print(f"📖 Đang đọc danh sách thẩm định: {INPUT_FILE.name}")
     try:
-        df_input = pd.read_excel(INPUT_FILE, engine="openpyxl")
+        df_input = pd.read_excel(INPUT_FILE)
         
-        # Kiểm tra nhanh các cột theo ảnh bạn gửi (STT, Mã ERP, Tên, TS)
-        required_cols = ['STT', 'Mã ERP', 'Tên', 'TS']
-        if not all(col in df_input.columns for col in required_cols):
-            print(f"⚠️ Cảnh báo: File Excel thiếu một số cột {required_cols}")
-            print(f"🔍 Các cột hiện có trong file: {list(df_input.columns)}")
-
-        # 3. CHẠY THẨM ĐỊNH (AI Audit)
-        print(f"🔍 AI đang đối chiếu dữ liệu (Vĩnh Tân 4)...")
+        # 4. CHẠY THẨM ĐỊNH (AI Audit Batch)
+        print(f"🔍 AI đang đối chiếu dữ liệu (Extract -> Score -> Explain)...")
+        # Gọi hàm process đã viết trong pipeline.py
         df_out = pipe.process(df_input)
 
-        # 4. XUẤT KẾT QUẢ
+        # 5. XUẤT KẾT QUẢ RA EXCEL
+        OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
         df_out.to_excel(OUTPUT_FILE, index=False)
+        
         print("\n" + "="*60)
-        print(f"✨ HOÀN THÀNH!")
-        print(f"💾 Kết quả lưu tại: {OUTPUT_FILE.name}")
+        print(f"✨ THẨM ĐỊNH HOÀN TẤT!")
+        print(f"💾 File kết quả: {OUTPUT_FILE.name}")
+        print(f"📍 Lưu tại: {PROCESSED_DIR}")
         print("="*60)
 
     except Exception as e:
-        print(f"❌ Lỗi xử lý: {e}")
+        print(f"❌ Lỗi trong quá trình xử lý: {e}")
 
+# ============================================================
+# 3. ĐIỂM KÍCH HOẠT (ENTRY POINT)
+# ============================================================
 if __name__ == "__main__":
     main()
