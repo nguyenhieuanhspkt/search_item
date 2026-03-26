@@ -3,11 +3,12 @@ import sys
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
-
+from docx import Document  # Thêm dòng này ở đầu file main.py
 # ============================================================
 # 1. THIẾT LẬP ĐƯỜNG DẪN (PATH SETUP)
 # ============================================================
 current_file = Path(__file__).resolve()
+
 # AI_SYSTEM_DIR: folder 'ai_audit_system' (chứa pipeline.py)
 AI_SYSTEM_DIR = current_file.parent 
 # PROJECT_ROOT: lùi 4 tầng về 'TaskApp' (Dựa trên cấu trúc folder của Hiếu)
@@ -36,6 +37,7 @@ except Exception as e:
 
 # --- ĐỊNH VỊ CÁC FILE DỮ LIỆU ---
 DATA_DIR = AI_SYSTEM_DIR / "data"
+print(f"📂 Thư mục dữ liệu: {DATA_DIR}")
 INPUT_FILE = DATA_DIR / "raw" / "Your_102_items.xlsx"
 ERP_MASTER  = DATA_DIR / "raw" / "Data_For_Meili.xlsx"
 
@@ -47,10 +49,40 @@ META_FILE  = PROCESSED_DIR / "faiss_meta.pkl"
 # File kết quả xuất ra Excel
 OUTPUT_FILE = PROCESSED_DIR / f"Ket_Qua_Tham_Dinh_{datetime.now().strftime('%d%m_%H%M')}.xlsx"
 
+
+def read_input_file(file_path):
+    suffix = file_path.suffix.lower()
+    
+    # TRƯỜNG HỢP 1: FILE EXCEL (.xlsx, .xls)
+    if suffix in ['.xlsx', '.xls']:
+        return pd.read_excel(file_path)
+    
+    # TRƯỜNG HỢP 2: FILE WORD (.docx)
+    elif suffix == '.docx':
+        print(f"📄 Đang trích xuất bảng từ file Word: {file_path.name}")
+        doc = Document(file_path)
+        data = []
+        # Quét qua tất cả các bảng trong file Word
+        for table in doc.tables:
+            for row in table.rows:
+                data.append([cell.text.strip() for cell in row.cells])
+        
+        if not data:
+            raise Exception("Không tìm thấy bảng dữ liệu nào trong file Word!")
+            
+        # Biến dòng đầu tiên thành tiêu đề (Header)
+        df = pd.DataFrame(data[1:], columns=data[0])
+        return df
+    
+    else:
+        raise Exception(f"Định dạng {suffix} không được hỗ trợ!")
+
+
 # ============================================================
 # 2. CHƯƠNG TRÌNH CHÍNH (MAIN LOGIC)
 # ============================================================
 def main():
+    global INPUT_FILE
     print("="*60)
     print("🚀 HỆ THỐNG AI THẨM ĐỊNH VẬT TƯ - VĨNH TÂN 4")
     print(f"⏰ Bắt đầu lúc: {datetime.now().strftime('%H:%M:%S')}")
@@ -78,14 +110,26 @@ def main():
         PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
         pipe.build_index(str(ERP_MASTER), str(INDEX_FILE), str(META_FILE))
 
-    # 3. ĐỌC DANH SÁCH 102 MÓN CẦN THẨM ĐỊNH
+# 3. ĐỌC DANH SÁCH THẨM ĐỊNH (Hỗ trợ cả Excel và Word)
+    print(INPUT_FILE)
     if not INPUT_FILE.exists():
-        print(f"❌ Lỗi: Không tìm thấy file đầu vào tại:\n{INPUT_FILE}")
-        return
-        
+        # Kiểm tra xem có file Word cùng tên không nếu không thấy Excel
+        WORD_INPUT = INPUT_FILE.with_suffix('.docx')
+        if WORD_INPUT.exists():
+            INPUT_FILE = WORD_INPUT
+        else:
+            print(f"❌ Lỗi: Không tìm thấy file đầu vào (.xlsx hoặc .docx) tại:\n{INPUT_FILE.parent}")
+            return
+                
     print(f"📖 Đang đọc danh sách thẩm định: {INPUT_FILE.name}")
     try:
-        df_input = pd.read_excel(INPUT_FILE)
+        # Gọi hàm đọc linh hoạt đã viết ở trên
+        df_input = read_input_file(INPUT_FILE)
+        print(f"✅ Đã nạp {len(df_input)} dòng từ {INPUT_FILE.name}")
+        
+        # 4. CHẠY THẨM ĐỊNH (Giữ nguyên logic cũ)
+        print(f"🔍 AI đang đối chiếu dữ liệu...")
+        df_out = pipe.process(df_input)
         
         # 4. CHẠY THẨM ĐỊNH (AI Audit Batch)
         print(f"🔍 AI đang đối chiếu dữ liệu (Extract -> Score -> Explain)...")
