@@ -1,29 +1,21 @@
 import React from "react";
-import { Eye, Tag, Box, AlertCircle } from "lucide-react";
+import { 
+  Eye, CheckCircle2, AlertTriangle, XCircle, 
+  DollarSign, Box, Calendar, FileText, Info 
+} from "lucide-react";
 
 const PreviewTable = ({ data, isResult, loading }) => {
-  if (!loading && data.length === 0) return null;
+  if (!loading && (!data || data.length === 0)) return null;
 
-  /**
-   * Hàm xác định màu sắc cho Chủng loại
-   * Ưu tiên các nhóm chính tại Vĩnh Tân 4, còn lại dùng màu xám dự phòng
-   */
-  const getCategoryStyle = (cat) => {
-    if (!cat || cat === "N/A" || cat === "Vật tư khác") {
-      return "bg-slate-50 text-slate-500 border-slate-200 italic";
-    }
-
-    const fixedStyles = {
-      "Vật liệu chịu lửa": "bg-orange-100 text-orange-700 border-orange-200",
-      "Cơ khí - Kim loại": "bg-blue-100 text-blue-700 border-blue-200",
-      "Thiết bị điện": "bg-yellow-100 text-yellow-800 border-yellow-200",
-      "Hóa chất - Dầu mỡ": "bg-purple-100 text-purple-700 border-purple-200",
-      "Làm kín & Cách điện": "bg-teal-100 text-teal-700 border-teal-200",
-      "Phụ tùng Bơm/Van": "bg-red-100 text-red-700 border-red-200",
-    };
-
-    // Nếu là nhóm mới chưa định nghĩa màu cụ thể
-    return fixedStyles[cat] || "bg-indigo-50 text-indigo-600 border-indigo-100 border-dashed";
+  // 1. Hàm render điểm số kèm màu sắc
+  const renderScore = (score) => {
+    if (!score && score !== 0) return <span className="text-gray-400">0%</span>;
+    const s = score > 1 ? score : score * 100;
+    const value = s.toFixed(1);
+    let colorClass = "text-red-500";
+    if (s >= 80) colorClass = "text-green-600 font-black";
+    else if (s >= 50) colorClass = "text-orange-500 font-bold";
+    return <span className={colorClass}>{value}%</span>;
   };
 
   return (
@@ -33,80 +25,110 @@ const PreviewTable = ({ data, isResult, loading }) => {
         <div className="flex items-center gap-2">
           <Eye size={18} className="text-gray-400" />
           <span className="font-bold text-gray-700 text-sm">
-            {isResult ? "Kết quả thẩm định AI" : "Xem trước dữ liệu trích xuất"}
+            {isResult ? "Báo cáo Thẩm định Chi tiết (AI + Core2 Metadata)" : "Xem trước dữ liệu Word"}
           </span>
         </div>
         {loading && (
           <div className="flex items-center gap-2 text-xs text-blue-600 animate-pulse font-medium">
             <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
-            Đang xử lý...
+            Đang truy vấn dữ liệu kho...
           </div>
         )}
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm text-left border-collapse">
+        <table className="w-full text-sm text-left border-separate border-spacing-0">
           <thead>
-            <tr className="bg-gray-50 text-gray-600 text-[11px] uppercase tracking-wider font-bold">
-              <th className="p-4 text-center w-12">STT</th>
-              <th className="p-4 text-left">Vật tư (Word)</th>
-              <th className="p-4 text-left">Thông số kỹ thuật (Word)</th>
-              <th className="p-4 text-center">ĐVT (Word)</th> {/* THÊM CỘT NÀY */}
-              <th className="p-4 text-left text-blue-600">👉 Vật tư khớp nhất (VT4)</th>
-              <th className="p-4 text-center">Mã ERP</th>
-              <th className="p-4 text-center">ĐVT (ERP)</th>
-              <th className="p-4 text-center">Độ tin cậy</th>
+            <tr className="bg-gray-50 text-gray-600 text-[10px] uppercase tracking-wider font-black">
+              <th className="p-4 text-center w-12 border-b border-gray-100">STT</th>
+              <th className="p-4 text-left border-b border-gray-100 w-[250px]">Vật tư (Word)</th>
+              <th className="p-4 text-left border-b border-gray-100">Kết quả đối chiếu hệ thống (VT4)</th>
+              <th className="p-4 text-center border-b border-gray-100">Thông tin kho & Giá</th>
+              <th className="p-4 text-center border-b border-gray-100">Mã ERP</th>
+              <th className="p-4 text-center border-b border-gray-100">Tin cậy</th>
             </tr>
           </thead>
 
-          <tbody>
+          <tbody className="divide-y divide-gray-100">
             {data.map((item, idx) => (
-              <tr key={idx} className="border-b border-gray-50 hover:bg-blue-50/40 transition-all">
-                <td className="p-4 text-center text-gray-400 text-xs">{item.stt}</td>
+              <tr key={idx} className="hover:bg-blue-50/30 transition-all group align-top">
+                {/* Cột 1: STT */}
+                <td className="p-4 text-center text-[10px] text-gray-400 font-bold">
+                  {item.stt || idx + 1}
+                </td>
                 
-                {/* 1. Tên từ Word */}
-                <td className="p-4 font-semibold text-gray-800 text-sm w-[200px]">
-                  {item.ten}
+                {/* Cột 2: Dữ liệu gốc từ Word */}
+                <td className="p-4">
+                  <div className="text-sm font-bold text-slate-800 leading-snug whitespace-pre-line">
+                    {item.ten}
+                  </div>
+                  <div className="text-[10px] text-orange-600 mt-2 font-bold uppercase tracking-tighter">
+                    ĐVT Word: {item.dvt_word || item.dvt || "N/A"}
+                  </div>
                 </td>
 
-                {/* 2. Thông số từ Word - Tách riêng giúp bảng thoáng hơn */}
-                <td className="p-4 text-[11px] text-gray-500 max-w-[250px] italic">
-                  {item.ts || "---"}
-                </td>
-
-                {/* 3. ĐVT từ Word */}
-                <td className="p-4 text-center text-sm font-medium text-orange-600">
-                  {item.dvt_word || item.dvt || "---"}
-                </td>
-
-                {/* 4. Kết quả AI (Xanh Đỏ) */}
+                {/* Cột 3: Tên khớp + Highlight + Trọng số AI */}
                 <td className="p-4">
                   <div 
-                    className="text-sm leading-relaxed"
+                    className="text-sm font-medium leading-relaxed text-blue-900 mb-2"
                     dangerouslySetInnerHTML={{ __html: item.diff_html || item.matchHeThong || "---" }} 
                   />
+                  
+                  {/* Badge trọng số AI (Giống bên search đơn lẻ) */}
+                  {item.explain && typeof item.explain === 'object' && !item.explain.isMeili && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                       <span className="text-[8px] bg-slate-100 px-1 py-0.5 rounded text-gray-500">C:{item.explain.weighted_cross}</span>
+                       <span className="text-[8px] bg-slate-100 px-1 py-0.5 rounded text-gray-500">B:{item.explain.weighted_bi}</span>
+                       <span className="text-[8px] bg-green-100 px-1 py-0.5 rounded text-green-700 font-bold">+{item.explain.bonus}</span>
+                    </div>
+                  )}
+                  {item.engine && <div className="text-[9px] text-gray-400 mt-1 italic uppercase">Nguồn: {item.engine}</div>}
                 </td>
 
-                {/* 5. Mã ERP */}
+                {/* Cột 4: Metadata (Giá, Kho, HĐ) - ĐÂY LÀ PHẦN HIẾU MUỐN THÊM */}
+                <td className="p-4">
+                  <div className="flex flex-col gap-2 min-w-[150px]">
+                    <div className="flex items-center gap-2 bg-green-50 px-2 py-1 rounded-lg border border-green-100">
+                      <DollarSign size={12} className="text-green-600" />
+                      <span className="text-[11px] font-black text-green-700">
+                        {item.don_gia ? `${item.don_gia.toLocaleString()}đ` : "---"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 bg-purple-50 px-2 py-1 rounded-lg border border-purple-100">
+                      <Box size={12} className="text-purple-600" />
+                      <span className="text-[10px] font-bold text-purple-700 truncate" title={item.kho}>
+                        {item.kho?.split('-')[0] || "---"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
+                      <FileText size={12} className="text-slate-500" />
+                      <span className="text-[9px] font-medium text-slate-600 truncate w-24" title={item.hop_dong}>
+                        {item.hop_dong || "Chưa có HĐ"}
+                      </span>
+                    </div>
+                  </div>
+                </td>
+
+                {/* Cột 5: Mã ERP */}
                 <td className="p-4 text-center">
-                  <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded font-mono text-[11px] font-bold">
-                    {item.erp || "---"}
-                  </span>
+                  <div className="flex flex-col items-center gap-1">
+                    <code className="bg-slate-900 text-slate-100 px-2 py-1 rounded font-mono text-[11px] font-bold">
+                      {item.erp || "---"}
+                    </code>
+                    <span className="text-[10px] text-blue-700 font-black">{item.dvt || "Cái"}</span>
+                  </div>
                 </td>
 
-                {/* 6. ĐVT chuẩn ERP */}
-                <td className="p-4 text-center text-sm font-bold text-blue-800">
-                  {item.dvt_he_thong || "---"}
-                </td>
-
-                {/* 7. Score */}
+                {/* Cột 6: Score */}
                 <td className="p-4 text-center">
-                  <span className={`font-black text-sm ${
-                    item.score >= 0.8 ? 'text-green-600' : 
-                    item.score >= 0.5 ? 'text-orange-500' : 'text-red-500'
-                  }`}>
-                    {item.score ? (item.score * 100).toFixed(1) + "%" : "0%"}
-                  </span>
+                  <div className="flex flex-col items-center">
+                    {renderScore(item.score)}
+                    {item.explain?.why && (
+                      <div className="text-[8px] text-gray-400 mt-1 uppercase tracking-tighter w-16 leading-tight">
+                        {item.explain.why[0]}
+                      </div>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -114,19 +136,15 @@ const PreviewTable = ({ data, isResult, loading }) => {
         </table>
       </div>
 
-      {/* Footer Ghi chú */}
+      {/* FOOTER */}
       {isResult && (
-        <div className="px-6 py-3 bg-gray-50/80 border-t border-gray-100 flex justify-between items-center">
-          <p className="text-[10px] text-gray-400 italic">
-            * Dữ liệu đối soát dựa trên danh mục ERP nhà máy cập nhật mới nhất.
+        <div className="px-6 py-3 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
+          <p className="text-[10px] text-gray-400 font-bold italic">
+            * Hệ thống đã đồng bộ Metadata từ Core2 (Meilisearch) cho kết quả AI.
           </p>
-          <div className="flex gap-3">
-            <div className="flex items-center gap-1 text-[10px] text-gray-500">
-               <div className="w-2 h-2 bg-green-500 rounded-full"></div> Khớp tốt
-            </div>
-            <div className="flex items-center gap-1 text-[10px] text-gray-500">
-               <div className="w-2 h-2 bg-rose-500 rounded-full"></div> Rủi ro cao
-            </div>
+          <div className="flex gap-4">
+             <div className="flex items-center gap-1 text-[10px] font-bold text-green-600"><CheckCircle2 size={12}/> Khớp</div>
+             <div className="flex items-center gap-1 text-[10px] font-bold text-orange-500"><AlertTriangle size={12}/> Soi lại</div>
           </div>
         </div>
       )}

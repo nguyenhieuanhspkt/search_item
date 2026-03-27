@@ -21,121 +21,135 @@ const WordSection = () => {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
 
-    if (!selectedFile.name.endsWith(".docx")) {
-      alert("Vui lòng chọn file định dạng .docx");
-      return;
-    }
-
+    const fileName = selectedFile.name.toLowerCase();
     setFile(selectedFile);
     setLoadingPreview(true);
     setReport([]); 
     setPreviewData([]); 
 
     try {
-      const data = await api.extractWord(selectedFile);
-      if (data && data.length > 0) {
-        setPreviewData(data);
-      } else {
-        alert("Không tìm thấy bảng dữ liệu hợp lệ trong file Word!");
-        setFile(null);
+      if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
+        const data = await selectedFile.arrayBuffer();
+        const workbook = XLSX.read(data, { type: 'array' });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        
+        // Đọc dữ liệu thô
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        
+        if (jsonData.length > 0) {
+          // KIỂM TRA SỐ CỘT CỦA HÀNG ĐẦU TIÊN (HEADER)
+          // Nếu số cột > 4, chặn luôn không cho lấy dữ liệu
+          const columnCount = jsonData[0].length;
+          
+          if (columnCount > 4) {
+            alert(`File Excel có ${columnCount} cột. Hệ thống yêu cầu ĐÚNG 4 cột: STT | Tên | Thông số | ĐVT. Vui lòng chỉnh lại file!`);
+            setFile(null);
+            setLoadingPreview(false);
+            return; // Dừng lại ở đây
+          }
+
+          const formatted = jsonData
+            .slice(1) // Bỏ hàng tiêu đề
+            .filter(row => row[1]) // Bắt buộc phải có Tên vật tư
+            .map(row => ({
+              stt: String(row[0] || ""),
+              ten: String(row[1] || ""),
+              ts: String(row[2] || ""),
+              dvt_word: String(row[3] || "")
+            }));
+
+          setPreviewData(formatted);
+        }
+      } 
+      else if (fileName.endsWith(".docx")) {
+        // Logic Word giữ nguyên...
+        const data = await api.extractWord(selectedFile);
+        if (data && !data.error) setPreviewData(data);
       }
     } catch (err) {
-      console.error("Lỗi trích xuất:", err);
-      alert("Lỗi kết nối server hoặc file không đúng định dạng bảng.");
+      alert("Lỗi xử lý file!");
       setFile(null);
     } finally {
       setLoadingPreview(false);
     }
   };
-
   /**
    * Bước 2: Chạy thẩm định AI hàng loạt (Bulk Match)
    */
 const handleStart = async () => {
-    if (previewData.length === 0) return;
-    
-    setIsProcessing(true);
-    setProgress(0);
-    setReport([]); // Xóa báo cáo cũ nếu có
+  if (previewData.length === 0) return;
+  setIsProcessing(true);
+  setProgress(0);
+  setReport([]);
 
-    try {
-      // 1. Chuẩn bị payload
-      const payload = previewData.map(item => ({
-        stt: String(item.stt || ""),
-        ten: item.ten,
-        tskt: item.ts || "", 
-        dvt: item.dvt_word || ""
-      }));
+  try {
+    const payload = previewData.map(item => ({
+      stt: String(item.stt || ""),
+      ten: item.ten || "",
+      tskt: item.ts || "",
+      dvt: item.dvt_word || ""
+    }));
 
-      // 2. Sử dụng FETCH để hứng Stream (Thay vì api_service)
-      const API_URL = import.meta.env.VITE_API_URL
-      const response = await fetch(`${API_URL}/api/bulk-match`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/api/bulk-match`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
 
-      if (!response.ok) throw new Error("Cổng AI Server không phản hồi");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulated = [];
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n');
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const res = JSON.parse(line.replace('data: ', ''));
+          if (res.status === "progress" && res.data) {
+            // --- BƯỚC QUAN TRỌNG: TRUY VẤN NGƯỢC MEILI CHO MỖI CHUNK ---
+            const enrichedData = await Promise.all(res.data.map(async (aiItem) => {
+              if (!aiItem.erp || aiItem.erp === "---") return aiItem;
+              
+              try {
+                // Gọi Meili để lấy Metadata gốc
+                const meiliRes = await api.searchMeilisearch(aiItem.erp);
+                const meta = meiliRes?.hits?.[0]; 
+                return {
+                  ...aiItem,
+                  // Đắp thêm metadata từ Meili vào kết quả AI
+                  don_gia: meta?.["Đơn Giá Nhập"],
+                  hop_dong: meta?.["Số Hợp Đồng/QĐ"],
+                  kho: meta?.["Kho"],
+                  nam: meta?.["Năm"],
+                  matchHeThong: meta?.["Tên vật tư (NXT)"] || aiItem.matchHeThong
+                };
+              } catch (e) { return aiItem; }
+            }));
 
-        lines.forEach(line => {
-          if (line.startsWith('data: ')) {
-            try {
-              const res = JSON.parse(line.replace('data: ', ''));
+            const newBatch = enrichedData.map((item, index) => ({
+              ...previewData[accumulated.length + index],
+              ...item,
+              score: item.score > 1 ? item.score / 100 : item.score
+            }));
 
-              if (res.status === "progress") {
-                // Cập nhật % tiến độ cho thanh Progress Bar
-                setProgress(res.percent);
-              } 
-              else if (res.status === "success") {
-                // Nhận kết quả cuối cùng và map lại để hiển thị
-                const formattedResults = res.data.map((item, index) => ({
-                  ...previewData[index],
-                  // Thông tin khớp từ Hệ thống
-                  matchHeThong: item.stock_name,
-                  erp: item.erp,
-                  dvt: item.dvt_he_thong,
-                  chung_loai: item.chung_loai,
-                  
-                  // Thông tin kỹ thuật AI
-                  score: item.score,
-                  explain: item.explain, // Giữ lại chi tiết Rules (Thưởng/Phạt)
-                  diff_html: item.diff_html, // Giữ lại highlight xanh đỏ
-                  
-                  // Dữ liệu thô nếu cần soi kỹ hơn
-                  raw: item.full_stock_info 
-                }));
-                
-                setReport(formattedResults);
-                setProgress(100);
-              } 
-              else if (res.status === "error") {
-                alert("Lỗi thẩm định: " + res.message);
-                setIsProcessing(false);
-              }
-            } catch (e) {
-              console.error("Lỗi giải mã gói tin AI:", e);
-            }
+            accumulated = [...accumulated, ...newBatch];
+            setReport([...accumulated]);
+            setProgress(res.percent);
           }
-        });
+        }
       }
-    } catch (err) {
-      console.error("Lỗi Bulk Match:", err);
-      alert("Không thể kết nối với AI Server! Hãy kiểm tra Backend tại máy cơ quan.");
-    } finally {
-      setIsProcessing(false);
     }
-  };
-
+  } catch (err) {
+    alert("Lỗi kết nối hệ thống!");
+  } finally {
+    setIsProcessing(false);
+  }
+};
   /**
    * Bước 3: Xóa file và dọn dẹp dữ liệu
    */
@@ -157,50 +171,55 @@ const handleStart = async () => {
   const exportToExcel = () => {
     if (!report || report.length === 0) return;
 
-    const dataForExcel = report.map((item, index) => ({
-      "STT": item.stt || index + 1,
-      // --- Dữ liệu gốc từ Word ---
-      "Tên vật tư (Word)": item.ten || "",
-      "Thông số (Word)": item.ts || "",
-      "ĐVT (Word)": item.dvt_word || "",
-
-      // --- Kết quả bóc tách & Đối chiếu ---
-      "Mã ERP": item.erp || "---",
-      "Vật tư khớp nhất (Hệ thống)": item.matchHeThong || "Không tìm thấy",
-      "ĐVT Hệ thống": item.dvt || "",
-      "Chủng loại": item.chung_loai || "",
+    const dataForExcel = report.map((item, index) => {
+      // 1. Chuẩn hóa Score về dạng 0-100 để hiển thị
+      const finalScore = item.score > 1 ? item.score : (item.score * 100);
       
-      // --- Đánh giá AI ---
-      "Độ tin cậy (%)": (item.score > 0 ? item.score : 0).toFixed(1) + "%",
-      "Giải thích (AI)": (item.explain && typeof item.explain === 'string') 
-                    ? item.explain.replace(/<[^>]*>?/gm, '') 
-                    : "",
-      "Ghi chú": item.score >= 80 ? "Khớp hoàn toàn" : (item.score >= 50 ? "Cần kiểm tra lại" : "Lệch thông tin")
-    }));
+      return {
+        "STT": item.stt || index + 1,
+        // --- Dữ liệu gốc từ Word ---
+        "Tên vật tư (Word)": item.ten || "",
+        "Thông số (Word)": item.ts || "",
+        "ĐVT (Word)": item.dvt_word || "",
 
-    // Tạo worksheet
+        // --- Kết quả đối chiếu từ Hệ thống ---
+        "Mã ERP": item.erp || "---",
+        "Vật tư khớp nhất (VT4)": item.matchHeThong || "Không tìm thấy",
+        "ĐVT Hệ thống": item.dvt || "",
+        "Nguồn xử lý": item.engine || "AI Search", // BIẾN MỚI: Biết món nào khớp mã, món nào AI tìm
+
+        // --- Đánh giá AI ---
+        "Độ tin cậy (%)": finalScore.toFixed(1) + "%",
+        "Giải thích chi tiết": (item.explain && typeof item.explain === 'string') 
+                               ? item.explain.replace(/<[^>]*>?/gm, '') // Xóa thẻ HTML nếu có
+                               : "",
+        
+        // --- Ghi chú thẩm định ---
+        "Kết luận": finalScore >= 80 ? "Khớp hoàn toàn" : (finalScore >= 50 ? "Cần kiểm tra lại" : "Lệch thông tin")
+      };
+    });
+
     const worksheet = XLSX.utils.json_to_sheet(dataForExcel);
     
-    // Chỉnh độ rộng các cột cho dễ nhìn (Auto-fit cơ bản)
+    // Cập nhật độ rộng cột (Thêm 1 cột nên mảng này dài thêm 1 phần tử)
     const wscols = [
       { wch: 5 },  // STT
       { wch: 35 }, // Tên Word
       { wch: 30 }, // Thông số Word
-      { wch: 10 }, // ĐVT
+      { wch: 10 }, // ĐVT Word
       { wch: 15 }, // ERP
       { wch: 40 }, // Vật tư hệ thống
       { wch: 12 }, // ĐVT Hệ thống
-      { wch: 15 }, // Chủng loại
+      { wch: 15 }, // Nguồn xử lý (Mới)
       { wch: 15 }, // Độ tin cậy
       { wch: 50 }, // Giải thích
-      { wch: 20 }, // Ghi chú
+      { wch: 20 }, // Kết luận
     ];
     worksheet['!cols'] = wscols;
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "KetQuaThamDinh");
 
-    // Tên file theo định dạng nhà máy
     const timeStr = new Date().toLocaleDateString('vi-VN').replace(/\//g, '-');
     const fileName = `Bao_cao_Tham_dinh_Vinh_Tan_4_${timeStr}.xlsx`;
     XLSX.writeFile(workbook, fileName);

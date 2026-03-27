@@ -165,27 +165,45 @@ class MaterialAuditPipeline:
         return scored_results
 
     def _format_output(self, row, best=None, error_msg=None):
-        """Cập nhật cấu trúc bảng Excel đầu ra"""
+        """Cập nhật cấu trúc bảng Excel đầu ra - Đảm bảo tách cột rõ ràng"""
+        # 1. Khung sườn cơ bản luôn phải có
         base = {
             "STT": row.get("STT", ""),
-            "Tên gốc": row.get("Tên", ""),
-            "TS gốc": row.get("TS", "")
+            "Tên gốc": row.get("Tên", row.get("Tên vật tư", "")), # linh hoạt tên cột
+            "TS gốc": row.get("TS", row.get("Thông số kỹ thuật", ""))
         }
-        if error_msg: return {**base, "Kết luận": f"⚠️ Lỗi: {error_msg}"}
         
+        # 2. Trường hợp bị lỗi hệ thống
+        if error_msg: 
+            return {**base, "Kết luận": f"⚠️ Lỗi: {error_msg}"}
+        
+        # 3. Trường hợp tìm thấy kết quả ĐẠT ngưỡng (Threshold)
         if best and best['score'] >= self.threshold:
             return {
                 **base,
-                "Mã ERP gợi ý": best["material_code"],
-                "Tên gợi ý": best["full_name"],
-                "Đơn vị": best["unit"],
-                "Giá ERP": best["price"],        # Cột mới
-                "Diễn giải ERP": best["description"], # Cột mới
+                "Mã ERP gợi ý": best.get("material_code", ""),
+                "Tên gợi ý": best.get("full_name", ""),
+                "Đơn vị": best.get("unit", ""),
+                "Giá ERP": best.get("price", 0),
+                "Diễn giải ERP": best.get("description", ""),
                 "Độ tin cậy": round(best["score"], 4),
-                "Lời phê AI": best["explain"],
+                "Lời phê AI": best.get("explain", ""),
                 "Kết luận": "✅ ĐẠT"
             }
-
+        
+        # 4. Trường hợp KHÔNG tìm thấy món nào đủ tin cậy (Cực kỳ quan trọng để tránh lỗi hình ảnh)
+        else:
+            return {
+                **base,
+                "Mã ERP gợi ý": "Không tìm thấy",
+                "Tên gợi ý": best.get("full_name", "") if best else "",
+                "Đơn vị": "",
+                "Giá ERP": 0,
+                "Diễn giải ERP": "",
+                "Độ tin cậy": round(best["score"], 4) if best else 0,
+                "Lời phê AI": "Không có vật tư tương đương phù hợp trong kho dữ liệu.",
+                "Kết luận": "❌ KHÔNG ĐẠT"
+            }
     def process(self, df_input):
         """Hàm chính quét lô 102 món và trả về DataFrame"""
         final_rows = []
