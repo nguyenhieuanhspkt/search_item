@@ -131,10 +131,7 @@ def main():
         print(f"🔍 AI đang đối chiếu dữ liệu...")
         df_out = pipe.process(df_input)
         
-        # 4. CHẠY THẨM ĐỊNH (AI Audit Batch)
-        print(f"🔍 AI đang đối chiếu dữ liệu (Extract -> Score -> Explain)...")
-        # Gọi hàm process đã viết trong pipeline.py
-        df_out = pipe.process(df_input)
+     
 
         # 5. XUẤT KẾT QUẢ RA EXCEL
         OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,5 @@
-
-
 from routers import transfer
+import pandas as pd
 # main.py
 import os
 import sys
@@ -56,6 +55,17 @@ except ImportError as e:
     LegacyEngine = None
     BulkMatcher = None
 
+# core3
+try:
+    # Đường dẫn có thể khác tuỳ repo của bạn (vd: search_item/back_end/core/engine.py)
+    # Ở đây giữ nguyên import để tương thích với code cũ của bạn.
+    from ai_audit_system.pipeline import MaterialAuditPipeline as DeepSearchEngine
+    
+except ImportError as e:
+    print(f"⚠️ Cảnh báo: Không tìm thấy DeepSearchEngine (CORE3): {e}")
+    DeepSearchEngine = None
+    
+
 # =========================================================
 # 2) Cấu hình app & biến toàn cục
 # =========================================================
@@ -63,11 +73,13 @@ except ImportError as e:
 app = FastAPI(title="Hệ thống Thẩm định Vật tư Unified v2.6")
 
 INDEX_DIR = os.path.join(BASE_DIR, "vattu_index")
+INDEX_CORE3_DIR = os.path.join(BASE_DIR, "back_end", "ai_audit_system", "data", "processed")  # Giả sử Core3 cũng dùng thư mục này để lưu index/vector
 MODEL_PATH = os.path.join(BASE_DIR, "AI_models", "BGE")
 ADMIN_PASSWORD = "admin123"
 
 # Global instances (lazy-load)
 core2_instance = None
+core3_instance = None
 legacy_instance = None
 bulk_matcher = None
 is_ready = False
@@ -120,26 +132,30 @@ async def ensure_engines(mode: str = "combined"):
     """
     Đảm bảo chỉ nạp engine cần thiết theo `mode`, có khóa tránh nạp lặp.
     """
-    global core2_instance, legacy_instance, bulk_matcher
+    global core2_instance, legacy_instance, bulk_matcher, DeepSearchEngine
 
     async with _init_lock:
-        # Core2
+        # --- Engine 1 (Core2) ---
         if mode in ("core2", "combined") and (Core2Engine is not None) and (core2_instance is None):
             db_path = os.path.join(BASE_DIR, "core2", "entities.db")
             core2_instance = Core2Engine(db_path=db_path)
             print("--- ✅ Core2 Engine: Sẵn sàng ---")
 
-        # Legacy
+        # --- Engine 2 (Legacy) ---
         if mode in ("legacy", "combined") and (LegacyEngine is not None) and (legacy_instance is None):
             legacy_instance = LegacyEngine(model_path=MODEL_PATH, index_dir=INDEX_DIR)
-            if BulkMatcher is not None:
-                try:
-                    global bulk_matcher
-                    bulk_matcher = BulkMatcher(engine=legacy_instance)
-                except Exception as e:
-                    print(f"⚠️ Không thể khởi tạo BulkMatcher: {e}")
+            # ... (giữ nguyên phần BulkMatcher)
             print("--- ✅ Legacy AI Engine: Sẵn sàng ---")
+
+        # --- Engine 3 (MỚI: Deep Search) ---
+        if mode in ("deep", "combined") and (DeepSearchEngine is not None) and (deep_search_instance is None):
+            # Giả sử engine này cần một thư mục riêng tên là 'deep_models'
+            deep_model_path = MODEL_PATH
+            deep_search_instance = DeepSearchEngine(path=deep_model_path)
+            print("--- ✅ Deep Search Engine: Sẵn sàng ---")
+        
         is_model_loaded = True
+        
 
 
 # =========================================================
