@@ -1,0 +1,18 @@
+step 1. lấy sheet PL1.5 DT VẬT TƯ TM  (sh1) trong excel FILE 1 chuyển thành df.vattu_dutoan_TTS3 (df1),
+
+step 2. lấy sheet Cơ sở giá (sh2) trong excel FILE 1 chuyển thành df.vattu_cosogia_TTS3 (df2)
+
+step 3. lấy sheet PL1.5 DT VẬT TƯ TM (sh3) trong excel FILE 2 chuyển thành df.vattu_dutoan_TTS2 (df3)
+
+step 4. chọn giữ cột df1. cách chọn: chỉ giữ lại cột B->D, F,L,O và R của sh1, dữ liệu từ hàng 12,của sh1
+
+Step 5. Đổi tên cột df1. cách đổi lần lượt là :Mã HM, TVT,DVT,KL,DG,TT,MG tương ứng từ trái sang phải của các cột đã giữ ở bước 4.
+
+step 6. df2 lấy hết cột, nhưng column name df cần rename lại, lần lượt là: STT,MG,TVT,DVT,HSX,DG,TAX,Price_base, còn lại là từ cột I đến cột V của sh2, đặt tên cột là theo cách truyền thống của pandas đảm bảo hiểu được nghĩa của text tại hàng 2 của sh2.
+
+còn nhiều step nữa. mà làm tới đó để mình review kết quả đã.
+
+1. Chuẩn hóa văn bản (Deep Cleaning)
+2. Bóc tách bất thường Đơn giá (Price Audit)
+3. Hợp nhất thông tin (Data Enrichment)
+4. Cộng dồn và Thu gọn (Aggregation)

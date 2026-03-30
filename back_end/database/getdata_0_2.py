@@ -8,7 +8,9 @@ def merge_vattu_and_cosogia(input_file, output_file):
         df_vattu = pd.read_excel(input_file, sheet_name="VatTu_Da_Clean")
         df_cosogia = pd.read_excel(input_file, sheet_name="CoSoGia_Da_Clean")
 
-        key_vattu = 'Unnamed: 17'
+        # key_vattu = 'Unnamed: 17'
+        key_vattu = 'Unnamed: 27'
+
         key_cosogia = 'Unnamed: 1'
 
         # 1. Chuẩn hóa Key
