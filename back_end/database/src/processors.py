@@ -2,43 +2,65 @@ import pandas as pd
 import re
 
 # --- CÁC HÀM CƠ BẢN (STEP 1 - 3) ---
-def step_1_to_3_load_data(file_1_path, file_2_path):
-    """
-    Nạp và chuẩn hóa tên cột dựa trên tọa độ Index chính xác:
-    - df3 (S1): D (TVT), M (DG - Index 12), S (Mã ERP_TTS1 - Index 18)
-    - df4 (ERP): B (TVT), C (DG), D (DVT), J (History), K (Over1year), L (TSKT)
-    """
-    print(f"📖 Đang nạp dữ liệu từ các File...")
+def step_1_to_3_load_data(file_1_path, file_2_path, file_3_path):
+    """Nạp 5 nguồn dữ liệu từ 3 file khác nhau"""
+    print(f"📖 Đang nạp dữ liệu tổng hợp từ 3 File...")
+    
+    # File 1: Dự toán, Cơ sở giá, ERP
     df1 = pd.read_excel(file_1_path, sheet_name="PL1.5 DT VẬT TƯ TM")
     df2 = pd.read_excel(file_1_path, sheet_name="Cơ sở giá")
     df4 = pd.read_excel(file_1_path, sheet_name="ERP")
-    df3 = pd.read_excel(file_2_path, sheet_name="PL1.5 DT VẬT TƯ TM")
-
-    # --- XỬ LÝ DF3 (Kho Trung tu S1) ---
-    mapping_df3 = {
-        df3.columns[3]: 'TVT',            # Cột D
-        df3.columns[12]: 'DG',            # Cột M (Index 12)
-        df3.columns[18]: 'Ma_ERP_TTS1'    # Cột S (Index 18)
-    }
-    df3.rename(columns=mapping_df3, inplace=True)
     
-    # --- XỬ LÝ DF4 (Kho ERP 20k dòng) ---
-    mapping_df4 = {
-        df4.columns[1]: 'TVT_Goc',     # Cột B
-        df4.columns[2]: 'DG',          # Cột C
-        df4.columns[3]: 'DVT',         # Cột D
-        df4.columns[9]: 'history',      # Cột J (Index 9)
-        df4.columns[10]: 'over1year',   # Cột K (Index 10)
-        df4.columns[11]: 'TSKT'         # Cột L (Index 11)
-    }
+    # File 2: Kho S1
+    df3 = pd.read_excel(file_2_path, sheet_name="PL1.5 DT VẬT TƯ TM")
+    
+    # File 3: Huyền (df5)
+    print(f"📖 Đang nạp df5 từ dòng 3 (Header=2)...")
+    df5 = pd.read_excel(file_3_path,sheet_name="Dự toán",header=2) # Hiếu bổ sung sheet_name nếu cần
+    print(f"📊 df5 nạp thành công: {len(df5.columns)} cột.")
+    # --- BƯỚC LỌC DÒNG THEO CỘT B (STT) ---
+    # Lấy cột B (Index 1). Nếu ô đó trống (NaN) hoặc là chuỗi rỗng thì loại bỏ.
+    # .notna() loại bỏ NaN, .astype(str).str.strip() != "" loại bỏ các ô chỉ có dấu cách
+    df5 = df5[df5.iloc[:, 1].notna()] 
+    df5 = df5[df5.iloc[:, 1].astype(str).str.strip() != ""]
+    
+    print(f"🧹 Sau khi lọc theo cột B, df5 còn lại: {len(df5)} dòng vật tư.")
+    # --- CHUẨN HÓA DF3 & DF4 (Giữ nguyên logic cũ) ---
+    df3.rename(columns={df3.columns[3]: 'TVT', df3.columns[12]: 'DG', df3.columns[18]: 'Ma_ERP_TTS1'}, inplace=True)
+    
+    mapping_df4 = {df4.columns[1]: 'TVT_Goc', df4.columns[2]: 'DG', df4.columns[3]: 'DVT', 
+                   df4.columns[9]: 'history', df4.columns[10]: 'over1year', df4.columns[11]: 'TSKT'}
     df4.rename(columns=mapping_df4, inplace=True)
+    df4['TVT'] = df4['TVT_Goc'].astype(str) + " " + df4['TSKT'].fillna("").astype(str)
 
-    # Tạo cột TVT tổng hợp cho df4 (Tên + Thông số)
-    df4['TVT'] = df4['TVT_Goc'].astype(str).str.strip() + " " + df4['TSKT'].fillna("").astype(str).str.strip()
-    df4['TVT'] = df4['TVT'].str.replace(r'\s+', ' ', regex=True).str.strip()
+    # --- CHUẨN HÓA DF5 (File 3) ---
+    # Tọa độ: L(11), M(12), C(2), O(14), P(15), Q(16), T(19), U(20)
+    # Nhà thầu báo giá: W(22) đến AB(27) -> Ta lấy giá thấp nhất hoặc trung bình tùy Hiếu, 
+    # ở đây mình lấy cột W làm giá đại diện (DG) để so sánh.
+    # RENAME THEO THỨ TỰ INDEX TĂNG DẦN (Từ trái qua phải)
+    # --- CHUẨN HÓA DF5 (FILE 3) ---
+    # Header dòng 3 (header=2)
+    mapping_df5 = {
+        df5.columns[1]:  'STT_df5',    # B (Index 1) - STT
+        df5.columns[2]:  'Ma_SCL',     # C (Index 2) - MG
+        df5.columns[11]: 'TVT_Goc',    # L (Index 11)
+        df5.columns[12]: 'TSKT',       # M (Index 12)
+        df5.columns[14]: 'DVT',        # O (Index 14)
+        df5.columns[15]: 'KL_df5',     # P (Index 15)
+        df5.columns[18]: 'DG',         # S (Index 18) - Đơn giá
+        df5.columns[19]: 'TT_df5',     # T (Index 19) - Thành tiền
+        df5.columns[20]: 'Ghi_chu'     # U (Index 20)
+    }
+    
+    # Thực hiện đổi tên
+    df5.rename(columns=mapping_df5, inplace=True)
+    
+    # Xử lý gộp Tên + Thông số kỹ thuật cho df5
+    df5['TVT'] = df5['TVT_Goc'].astype(str).str.strip() + " " + df5['TSKT'].fillna("").astype(str).str.strip()
+    df5['TVT'] = df5['TVT'].str.replace(r'\s+', ' ', regex=True).str.strip()
+    
 
-    print(f"✅ Đã chuẩn hóa df3 (kèm Ma_ERP_TTS1) và df4 (kèm History, Over1year).")
-    return df1, df2, df3, df4
+    return df1, df2, df3, df4, df5
 
 # --- STEP 4 & 5: XỬ LÝ DF1 + POPULATE DOWN MÃ HM ---
 
@@ -237,43 +259,120 @@ def classify_warning(score, diff_pct):
     
     return "✅ OK"
 
-def fuzzy_match_history(df_source, df_history, suffix_name):
+def fuzzy_match_history(df_left, df_history, suffix_name):
     """
-    So khớp mờ và thêm cột Đánh giá tự động.
+    So khớp mờ và chỉ giữ lại các cột cốt lõi từ kho lịch sử.
     """
-    print(f"🕵️ Đang so khớp với {suffix_name}...")
+    print(f"🕵️ Đang so khớp mờ với {suffix_name}...")
     
+    # Chuẩn hóa cột TVT của kho lịch sử để so sánh
     df_history['TVT_hist_clean'] = df_history['TVT'].apply(clean_text_vinh_tan)
     hist_list = df_history['TVT_hist_clean'].tolist()
     
     results = []
-    for _, row in df_source.iterrows():
-        match = process.extractOne(row['TVT_clean'], hist_list, scorer=fuzz.token_sort_ratio)
+    
+    # SỬA LỖI: Duyệt qua df_left (biến đầu vào) thay vì df_source
+    for _, row in df_left.iterrows():
+        # Kiểm tra xem dòng hiện tại có TVT_clean không (nếu chưa có thì tạo)
+        target_text = row['TVT_clean'] if 'TVT_clean' in row else clean_text_vinh_tan(row['TVT'])
         
-        if match and match[1] >= 75:
+        # Thực hiện ExtractOne
+        match = process.extractOne(target_text, hist_list, scorer=fuzz.token_sort_ratio)
+        
+        if match and match[1] >= 90:
             idx = match[2]
             dg_hist = df_history.iloc[idx]['DG']
             score = round(match[1], 1)
-            diff_pct = round(((row['DG'] - dg_hist) / dg_hist * 100) if dg_hist != 0 else 0, 2)
+            
+            # Tính toán chênh lệch % ngay tại đây
+            dg_current = row['DG']
+            diff_pct = round(((dg_current - dg_hist) / dg_hist * 100) if dg_hist != 0 else 0, 2)
             
             res_row = {
-                'MG': row['MG'],
                 f'TVT_{suffix_name}': df_history.iloc[idx]['TVT'],
                 f'DG_{suffix_name}': dg_hist,
+                f'Diff_{suffix_name}_Pct': diff_pct, # Cột so sánh đơn giá
                 f'Score_{suffix_name}': score,
-                f'Diff_Pct_{suffix_name}': diff_pct,
-                f'Danh_Gia_{suffix_name}': classify_warning(score, diff_pct) # Cột kết luận
+                f'Danh_Gia_{suffix_name}': classify_warning(score, diff_pct)
             }
             
-            # Thêm cột phụ tùy theo kho
+            # Giữ lại các cột đặc thù nếu có
             if 'Ma_ERP_TTS1' in df_history.columns:
                 res_row[f'Ma_ERP_{suffix_name}'] = df_history.iloc[idx]['Ma_ERP_TTS1']
-            if 'history' in df_history.columns:
-                res_row[f'History_{suffix_name}'] = df_history.iloc[idx]['history']
+            if 'over1year' in df_history.columns:
                 res_row[f'Over1year_{suffix_name}'] = df_history.iloc[idx]['over1year']
                 
             results.append(res_row)
         else:
-            results.append({'MG': row['MG'], f'TVT_{suffix_name}': "KHÔNG KHỚP", f'Danh_Gia_{suffix_name}': ""})
-            
-    return pd.merge(df_source, pd.DataFrame(results), on='MG', how='left')
+            # Nếu không khớp, trả về giá trị trống để bảng vẫn giữ nguyên số dòng
+            results.append({
+                f'TVT_{suffix_name}': "KHÔNG KHỚP", 
+                f'DG_{suffix_name}': 0, 
+                f'Diff_{suffix_name}_Pct': 0,
+                f'Danh_Gia_{suffix_name}': ""
+            })
+
+    # Tạo DataFrame kết quả từ list results
+    res_df = pd.DataFrame(results)
+    
+    # Ghép bảng kết quả (Right side) vào bảng gốc (Left side)
+    # Dùng concat theo trục ngang (axis=1) để đảm bảo số dòng khớp tuyệt đối
+    df_final = pd.concat([df_left.reset_index(drop=True), res_df], axis=1)
+    
+    return df_final
+    
+def compare_df5_with_others(df5_raw, df1_unique, df3_raw, df4_raw):
+    """
+    Hàm đối chiếu df5 (Sheet 4) - Rút gọn cột tối đa.
+    - Trái (df5): STT, TVT, TSKT, DVT, DG, TT.
+    - Phải (df1): TVT, DG (Khớp theo MG).
+    - Phải (S1, ERP): TVT, DG (Khớp mờ).
+    """
+    print("🧹 Đang thực hiện đối chiếu và tinh giản cột cho df5...")
+
+    # --- BƯỚC 1: CHUẨN BỊ BẢNG BÊN TRÁI (df5) ---
+    # Chỉ giữ lại các cột Hiếu yêu cầu
+    cols_left = ['STT_df5', 'Ma_SCL', 'TVT', 'TSKT', 'DVT', 'DG', 'TT_df5']
+    df_result = df5_raw[cols_left].copy()
+
+    # --- BƯỚC 2: KHỚP VỚI DF1 (DỰ TOÁN) QUA MÃ GIÁ (MG) ---
+    # Chỉ lấy TVT và DG của df1 để đưa vào bảng bên phải
+    df1_right = df1_unique[['MG', 'TVT', 'DG']].rename(columns={
+        'TVT': 'TVT_df1', 
+        'DG': 'DG_df1'
+    })
+
+    # Dùng merge như cũ để đảm bảo chính xác theo Mã SCL = MG
+    df_result = pd.merge(df_result, df1_right, left_on='Ma_SCL', right_on='MG', how='left')
+
+    # --- BƯỚC 3: ÉP KIỂU SỐ VÀ TÍNH % LỆCH DF5 VS DF1 ---
+    df_result['DG'] = pd.to_numeric(df_result['DG'], errors='coerce').fillna(0)
+    df_result['DG_df1'] = pd.to_numeric(df_result['DG_df1'], errors='coerce').fillna(0)
+    
+    df_result['Diff_df5_vs_df1_Pct'] = 0.0
+    mask = df_result['DG_df1'] != 0
+    df_result.loc[mask, 'Diff_df5_vs_df1_Pct'] = round(
+        ((df_result.loc[mask, 'DG'] - df_result.loc[mask, 'DG_df1']) / df_result.loc[mask, 'DG_df1'] * 100), 2
+    )
+
+    # --- BƯỚC 4: KÉO THÊM GIÁ S1 VÀ ERP (SO KHỚP MỜ) ---
+    # Ở đây mình gọi hàm fuzzy_match để điền thêm cột bên phải
+    from processors import fuzzy_match_history
+    
+    # Chỉ lấy TVT và DG từ S1/ERP để bảng không bị phình to
+    df_result = fuzzy_match_history(df_result, df3_raw, "S1")
+    df_result = fuzzy_match_history(df_result, df4_raw, "ERP")
+
+    # --- BƯỚC 5: LỌC LẠI CÁC CỘT CUỐI CÙNG ---
+    final_cols = [
+        'STT_df5', 'Ma_SCL', 'TVT', 'TSKT', 'DVT', 'DG', 'TT_df5', # Bên trái
+        'TVT_df1', 'DG_df1', 'Diff_df5_vs_df1_Pct',               # Bên phải (df1)
+        'DG_S1', 'Diff_S1_Pct',                                   # Bên phải (S1)
+        'DG_ERP', 'Diff_ERP_Pct'                                  # Bên phải (ERP)
+    ]
+    
+    # Chỉ lấy những cột tồn tại
+    df_result = df_result[[c for c in final_cols if c in df_result.columns]]
+
+    print(f"✅ Đã gọt cột xong. Tổng cộng {len(df_result)} dòng.")
+    return df_result
