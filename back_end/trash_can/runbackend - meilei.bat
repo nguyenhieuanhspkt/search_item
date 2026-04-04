@@ -1,55 +1,44 @@
 @echo off
-title He Thong Tham Dinh - TaskApp Unified
-color 0A
-
-set BASE_PATH=D:\TaskApp_kiet\TaskApp
-set BACKEND_DIR=%BASE_PATH%\search_item2\search_item\back_end
-set FRONTEND_DIR=%BASE_PATH%\search_item2\search_item\front_end
-set VENV_PYTHON=%BASE_PATH%\.venv\Scripts\python.exe
-set MEILI_DATA_DIR=%BASE_PATH%\meilisearch_data
-
-:: ------------------------------------------------------
-echo [STEP 0] Giai phong RAM...
-:: Them /FI "STATUS eq RUNNING" de tranh loi neu ko co process nao
-taskkill /F /IM python.exe /T /FI "STATUS eq RUNNING" >nul 2>&1
-taskkill /F /IM node.exe /T /FI "STATUS eq RUNNING" >nul 2>&1
-echo [OK] Da don dep.
-
-:: ------------------------------------------------------
-echo [STEP 1] Kiem tra Docker...
-:: Kiem tra xem lenh docker co ton tai ko
-docker -v >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ERROR] Docker chua duoc cai dat hoac chua add vao PATH!
-    pause
-    exit
-)
-
-:: Kiem tra container
-docker ps -a --format "{{.Names}}" | findstr /I "meilisearch_taskapp" >nul
-if %errorlevel% == 0 (
-    echo [DOCKER] Dang start Meilisearch...
-    docker start meilisearch_taskapp
-) else (
-    echo [DOCKER] Dang create Meilisearch...
-    docker run -d --name meilisearch_taskapp -p 7700:7700 -e MEILI_MASTER_KEY=HieuVinhTan4_2026 -v "%MEILI_DATA_DIR%:/meili_data" --restart always getmeili/meilisearch:latest
-)
-
-:: ------------------------------------------------------
-echo [STEP 2] Khoi dong Backend...
-if not exist "%VENV_PYTHON%" (
-    echo [ERROR] Khong tim thay file %VENV_PYTHON%
-    pause
-    exit
-)
-start "Backend Server" cmd /k "cd /d %BACKEND_DIR% && %VENV_PYTHON% -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
-
-:: ------------------------------------------------------
-echo [STEP 3] Khoi dong Frontend...
-start "Frontend React" cmd /k "cd /d %FRONTEND_DIR% && npm run dev"
+title Khoi dong TaskApp - Port 7700
+color 0B
+cls
 
 echo ======================================================
-echo    MOI THU DA OK! DANG MO TRINH DUYET...
+echo [BUOC 1] QUET SACH CONG 7700...
+echo ======================================================
+
+:: Tim tat ca cac PID dang dung cong 7700 va tieu diet tan goc
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :7700') do (
+    echo [CANH BAO] Phat hien ke chiem dong PID: %%a. Dang tieu diet...
+    taskkill /F /PID %%a /T >nul 2>&1
+)
+
+:: Cho 1 giay de Windows cap nhat lai bang mang
+timeout /t 1 >nul
+
+echo.
+echo [BUOC 2] DON DEP DOCKER CU...
+docker rm -f meilisearch_taskapp >nul 2>&1
+
+echo.
+echo [BUOC 3] KHOI CHAY LAI MEILISEARCH (PORT 7700)
+echo ======================================================
+:: Ep Docker bind vao IPv4 127.0.0.1 de tranh xung dot IPv6 cua Windows
+docker run -d --name meilisearch_taskapp ^
+  -p 127.0.0.1:7700:7700 ^
+  -e MEILI_MASTER_KEY=HieuVinhTan4_2026 ^
+  -v "D:\TaskApp_kiet\TaskApp\meilisearch_data:/meili_data" ^
+  --restart always getmeili/meilisearch:latest
+
+echo.
+echo [BUOC 4] KHOI DONG BACKEND & FRONTEND...
+:: (Phan nay Hiếu giu nguyen nhu file cu cua ban)
+start "Backend Server" cmd /k "cd /d D:\TaskApp_kiet\TaskApp\search_item2\search_item\back_end && D:\TaskApp_kiet\TaskApp\.venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+start "Frontend React" cmd /k "cd /d D:\TaskApp_kiet\TaskApp\search_item2\search_item\front_end && npm run dev"
+
+echo.
+echo ======================================================
+echo    DA LAY LAI CONG 7700 THANH CONG!
 echo ======================================================
 timeout /t 5
 start http://localhost:3000

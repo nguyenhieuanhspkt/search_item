@@ -230,7 +230,7 @@ const handleStart = async () => {
       <div className="flex justify-between items-center border-b border-gray-100 pb-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-             <FileCheck className="text-blue-600" /> Thẩm định file Word
+             <FileCheck className="text-blue-600" /> Tìm kiếm theo file danh mục
           </h2>
           <p className="text-sm text-gray-500 mt-1">
             Hệ thống tự động trích xuất và đối chiếu danh mục ERP nhà máy.

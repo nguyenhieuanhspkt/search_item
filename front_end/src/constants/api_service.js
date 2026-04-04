@@ -2,7 +2,7 @@
 import axios from "axios";
 import { Meilisearch } from "meilisearch"; // Thư viện vừa cài
 const API_BASE = import.meta.env.VITE_API_URL;
-const API_BASE_URL_MELEI = import.meta.env.API_BASE_URL_MELEI;
+const API_BASE_URL_MELEI = import.meta.env.VITE_API_BASE_URL_MELEI;
 console.log("Backend đang trỏ vào:", API_BASE); // Dòng này để Hiếu kiểm tra trong F12
 
 // 1. CẤU HÌNH GỌI THẲNG CỔNG 7700 (Docker Meilisearch)

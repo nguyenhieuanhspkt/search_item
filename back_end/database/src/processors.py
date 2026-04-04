@@ -1,6 +1,7 @@
 import pandas as pd
 import re
-
+# --- IMPORT FILE RỜI ---
+from ai_matcher import init_ai_engine, process_ai_audit_batch
 # --- CÁC HÀM CƠ BẢN (STEP 1 - 3) ---
 def step_1_to_3_load_data(file_1_path, file_2_path, file_3_path):
     """Nạp 5 nguồn dữ liệu từ 3 file khác nhau"""
@@ -376,3 +377,32 @@ def compare_df5_with_others(df5_raw, df1_unique, df3_raw, df4_raw):
 
     print(f"✅ Đã gọt cột xong. Tổng cộng {len(df_result)} dòng.")
     return df_result
+
+try:
+    from ai_matcher import init_ai_engine, process_ai_audit_batch
+except ImportError:
+    print("⚠️ Cảnh báo: Không nạp được ai_matcher.py")
+    
+def match_erp_with_ai_logic(df_left, df_erp_full):
+    """
+    Hàm bọc (Wrapper) để Main gọi. 
+    Main chỉ cần biết truyền df_left vào và nhận kết quả AI ra.
+    """
+    if 'init_ai_engine' not in globals() or not init_ai_engine():
+        print("❌ AI Engine không khả dụng, dùng so khớp mờ tạm thời.")
+        return fuzzy_match_history(df_left, df_erp_full, "ERP_Fuzzy")
+
+    print("🔎 Đang thực hiện AI Semantic Search cho ERP...")
+    df_ai_results = process_ai_audit_batch(df_left)
+    df_combined = pd.concat([df_left.reset_index(drop=True), df_ai_results], axis=1)
+
+    # Tra cứu giá từ df4 (erp_full)
+    erp_lookup = df_erp_full[['Ma_vattu', 'DG']].drop_duplicates('Ma_vattu').rename(columns={'DG': 'DG_ERP_AI'})
+    df_final = pd.merge(df_combined, erp_lookup, left_on='Ma_ERP_AI', right_on='Ma_vattu', how='left')
+    
+    # Tính % chênh lệch (logic ẩn bên trong processors)
+    df_final['Diff_AI_ERP_Pct'] = 0.0
+    mask = (df_final['DG_ERP_AI'] > 0) & (df_final['DG'] > 0)
+    df_final.loc[mask, 'Diff_AI_ERP_Pct'] = round(((df_final['DG'] - df_final['DG_ERP_AI']) / df_final['DG_ERP_AI'] * 100), 2)
+    
+    return df_final

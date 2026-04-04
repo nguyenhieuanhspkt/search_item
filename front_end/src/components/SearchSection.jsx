@@ -138,7 +138,7 @@ const SearchSection = () => {
       {/* HEADER */}
       <div className="mb-8 mt-10">
         <h2 className="text-4xl font-black text-slate-800 flex items-center gap-3 tracking-tight">
-          <Search className="text-blue-600" size={38} /> Thẩm định Unified v3.0
+          <Search className="text-blue-600" size={38} /> Tìm kiếm vật tư ERP v3.0
         </h2>
         <p className="text-slate-500 mt-2 italic border-l-4 border-blue-500 pl-4 font-medium">
           Đang kết nối: Core2 (Meilisearch) + Legacy AI (Semantic BGE-M3).
@@ -184,7 +184,7 @@ const SearchSection = () => {
             className="bg-blue-600 hover:bg-blue-700 text-white font-black py-3 px-12 rounded-2xl transition-all shadow-lg active:scale-95 disabled:bg-slate-200 flex items-center gap-3 uppercase tracking-widest text-sm"
           >
             {loading ? <Loader2 className="animate-spin" size={20} /> : <ClipboardCheck size={20} />}
-            Thẩm định
+            Tìm kiếm
           </button>
         </div>
       </div>
