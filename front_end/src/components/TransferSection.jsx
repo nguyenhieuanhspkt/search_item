@@ -1,38 +1,51 @@
 import React, { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom"; // Hook để đọc URL
 import { UploadCloud, File, CheckCircle, AlertCircle, Loader2, History, HardDrive } from "lucide-react";
 import api from "../constants/api_service";
 
 const TransferSection = () => {
+  // --- BƯỚC 1: LẤY THÔNG TIN ĐỘNG TỪ URL ---
+  const location = useLocation();
+  const queryParams = new URLSearchParams(location.search);
+  
+  // folderName sẽ lấy từ ?folder= trên link Zalo, nếu không có sẽ hiện "Thư mục chung"
+  const folderName = queryParams.get("folder") || "Thư mục chung";
+
   const [files, setFiles] = useState([]);
-  const [serverFiles, setServerFiles] = useState([]); // Danh sách file thực tế trong folder
+  const [serverFiles, setServerFiles] = useState([]); 
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState({ type: "", text: "" });
 
-  // Hàm lấy danh sách file hiện có trong folder từ Backend
+  // --- BƯỚC 2: CẬP NHẬT HÀM LẤY FILE (Truyền folderName xuống Backend) ---
   const fetchServerFiles = async () => {
-    const data = await api.getUploadedFiles();
-    setServerFiles(data);
+    try {
+      // Gửi folderName để Backend biết đường mà quét file trong thư mục đó
+      const data = await api.getUploadedFiles(folderName);
+      setServerFiles(data);
+    } catch (err) {
+      console.error("Lỗi lấy danh sách file:", err);
+    }
   };
 
-  // Load danh sách file khi vừa vào trang
   useEffect(() => {
     fetchServerFiles();
-  }, []);
+  }, [folderName]); // Chạy lại nếu folderName thay đổi
 
+  // --- BƯỚC 3: CẬP NHẬT HÀM UPLOAD (Gửi kèm folderName) ---
   const handleUpload = async () => {
     setUploading(true);
     setProgress(0);
     setMessage({ type: "", text: "" });
 
     try {
-      const res = await api.uploadFiles(files, (p) => {
+      // QUAN TRỌNG: Truyền folderName vào hàm uploadFiles
+      const res = await api.uploadFiles(files, folderName, (p) => {
         setProgress(p);
       });
       
-      setMessage({ type: "success", text: "Gửi file thành công! Hiếu đã nhận được." });
+      setMessage({ type: "success", text: `Gửi file thành công vào folder: ${folderName}` });
       setFiles([]);
-      // Cập nhật lại danh sách file hiển thị phía dưới
       await fetchServerFiles(); 
     } catch (err) {
       setMessage({ type: "error", text: "Lỗi: " + (err.response?.data?.detail || err.message) });
@@ -45,8 +58,9 @@ const TransferSection = () => {
     <div className="space-y-6 text-gray-800">
       <div className="text-center">
         <h2 className="text-2xl font-bold text-blue-600 uppercase tracking-tight">Cổng Nhận Tài Liệu</h2>
+        {/* HIỂN THỊ ĐỘNG TÊN THƯ MỤC Ở ĐÂY */}
         <p className="text-sm text-gray-500 mt-1 flex items-center justify-center gap-1">
-          <HardDrive size={14} /> Thư mục: Thẩm định 98_hieuna_3
+          <HardDrive size={14} /> Thư mục: <span className="font-bold text-blue-500">{folderName}</span>
         </p>
       </div>
 
@@ -102,7 +116,7 @@ const TransferSection = () => {
         {uploading ? <><Loader2 className="animate-spin" size={20}/> ĐANG GỬI...</> : `XÁC NHẬN GỬI TÀI LIỆU`}
       </button>
 
-      {/* --- PHẦN FEEDBACK: DANH SÁCH FILE HIỆN CÓ TRONG THƯ MỤC --- */}
+      {/* --- PHẦN FEEDBACK: DANH SÁCH FILE HIỆN CÓ --- */}
       <div className="mt-8 pt-6 border-t border-gray-100">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2 text-gray-500 font-bold text-xs uppercase tracking-wider">

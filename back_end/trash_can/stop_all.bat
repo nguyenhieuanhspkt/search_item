@@ -1,44 +1,45 @@
 @echo off
-title STOP ALL SERVICES - TaskApp Unified (Full Cleanup)
+title STOP ALL SERVICES - TaskApp Unified (Precise Cleanup)
 color 0C
 
 echo ======================================================
-echo    DANG QUET SACH CAC TIEN TRINH TASKAPP...
+echo     DANG NGAT CAC DICH VU TASKAPP (NHAM MUC TIEU)
 echo ======================================================
 
-:: 1. Dừng Meilisearch (Docker) an toàn
-echo [1/4] Dang dung Meilisearch (Docker)...
-:: Kiểm tra xem container có đang chạy không trước khi dừng
+:: 1. Dừng Backend trước (Dừng nguồn cấp dữ liệu)
+echo [1/4] Dang dung Backend (Python)...
+taskkill /F /FI "WINDOWTITLE eq Backend Server" /T >nul 2>&1
+if %errorlevel% equ 0 (echo     - Da dong cua so Backend Server.) else (echo     - Khong tim thay cua so Backend.)
+
+:: 2. Dừng Frontend (Vite/Node)
+echo.
+echo [2/4] Dang dung Frontend (React)...
+taskkill /F /FI "WINDOWTITLE eq Frontend React" /T >nul 2>&1
+if %errorlevel% equ 0 (echo     - Da dong cua so Frontend React.) else (echo     - Khong tim thay cua so Frontend.)
+
+:: 3. Xử lý Meilisearch (Docker)
+echo.
+echo [3/4] Dang xu ly Meilisearch (Docker)...
 docker ps -q --filter "name=meilisearch_taskapp" >nul 2>&1
 if %errorlevel% equ 0 (
-    echo    - Dang gui tin hieu dung an toan den Meilisearch...
+    echo     - Dang dung va xoa Container meilisearch_taskapp...
     docker stop meilisearch_taskapp >nul 2>&1
-    echo    - Da dung Meilisearch thanh cong.
+    docker rm -f meilisearch_taskapp >nul 2>&1
+    echo     - Da giai phong cong 7700 va xoa Container.
 ) else (
-    echo    - Meilisearch hien khong chay hoac da dung truoc do.
+    echo     - Meilisearch hien khong chay.
 )
 
-:: 2. Diệt Python (FastAPI Backend)
+:: 4. Diệt các cửa sổ CMD đang giữ tiêu đề của App
 echo.
-echo [2/4] Dang dung Backend (Python)...
-taskkill /F /IM python.exe /T /FI "STATUS eq RUNNING" >nul 2>&1
-if %errorlevel% equ 0 (echo    - Da dung Python thanh cong.) else (echo    - Khong co Python dang chay.)
-
-:: 3. Diệt Node.js / Vite (React Frontend)
-echo.
-echo [3/4] Dang dung Frontend (Node/Vite)...
-taskkill /F /IM node.exe /T /FI "STATUS eq RUNNING" >nul 2>&1
-if %errorlevel% equ 0 (echo    - Da dung Node/Vite thanh cong.) else (echo    - Khong co Node dang chay.)
-
-:: 4. Diệt các cửa sổ CMD con đang treo
-echo.
-echo [4/4] Dang don dep cac cua so lenh con...
-taskkill /F /FI "WINDOWTITLE eq Backend Server" >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Frontend React" >nul 2>&1
+echo [4/4] Dang dong cac cua so CMD...
+:: Lệnh này sẽ tìm tất cả các tiến trình cmd.exe có tiêu đề tương ứng và đóng chúng
+taskkill /F /FI "IMAGENAME eq cmd.exe" /FI "WINDOWTITLE eq Backend Server*" /T >nul 2>&1
+taskkill /F /FI "IMAGENAME eq cmd.exe" /FI "WINDOWTITLE eq Frontend React*" /T >nul 2>&1
 
 echo.
 echo ------------------------------------------------------
-echo [OK] TAT CA DICH VU (BAO GOM MEILI) DA NGAT AN TOAN.
+echo [OK] TAT CA DICH VU DA DUOC DON DEP TRIET DE.
 echo ======================================================
 timeout /t 3
 exit

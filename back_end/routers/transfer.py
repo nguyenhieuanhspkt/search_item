@@ -1,35 +1,40 @@
 import os
 import shutil
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Query
 from typing import List
 
 router = APIRouter()
 
-# ĐƯỜNG DẪN ĐÍCH CHÍNH XÁC CỦA HIẾU
-# Lưu ý: Chữ r đứng trước dấu ngoặc kép là BẮT BUỘC để xử lý các dấu gạch chéo ngược \
-TARGET_DIR = r"D:\onedrive_hieuna\OneDrive - EVN\Tổ Thẩm định\Năm 2026\Thẩm định 98_hieuna_3"
+# ĐỊNH NGHĨA ĐƯỜNG DẪN GỐC (Chỉ đến thư mục Năm 2026)
+BASE_PATH = r"D:\onedrive_hieuna\OneDrive - EVN\Tổ Thẩm định\Năm 2026"
 
 @router.post("/colleague/upload", tags=["Transfer"])
-async def upload_to_specific_folder(files: List[UploadFile] = File(...)):
-    # 1. Kiểm tra xem thư mục đích có tồn tại không
-    if not os.path.exists(TARGET_DIR):
+async def upload_to_specific_folder(
+    folder: str = Form(...),  # Nhận tên thư mục động từ React gửi lên
+    files: List[UploadFile] = File(...)
+):
+    """Xử lý nhận file và lưu vào đúng thư mục hồ sơ đang chọn"""
+    
+    # 1. Tạo đường dẫn đích dựa trên folder được truyền từ Link Zalo
+    target_dir = os.path.join(BASE_PATH, folder)
+    
+    # 2. Kiểm tra và tạo thư mục nếu chưa có
+    if not os.path.exists(target_dir):
         try:
-            os.makedirs(TARGET_DIR, exist_ok=True)
+            os.makedirs(target_dir, exist_ok=True)
         except Exception as e:
             raise HTTPException(
                 status_code=500, 
-                detail=f"Không thể tạo hoặc truy cập thư mục: {str(e)}"
+                detail=f"Không thể tạo thư mục trên máy Hiếu: {str(e)}"
             )
 
     saved_info = []
-    
     try:
         for file in files:
-            # Làm sạch tên file để tránh lỗi hệ thống
             safe_name = os.path.basename(file.filename)
-            final_path = os.path.join(TARGET_DIR, safe_name)
+            final_path = os.path.join(target_dir, safe_name)
             
-            # Ghi file theo kiểu stream để cân file 900MB
+            # Ghi file theo kiểu stream để hỗ trợ file nặng
             with open(final_path, "wb") as f:
                 shutil.copyfileobj(file.file, f)
             
@@ -37,32 +42,37 @@ async def upload_to_specific_folder(files: List[UploadFile] = File(...)):
             
         return {
             "status": "success",
-            "message": f"Đã nhận {len(saved_info)} file vào thư mục Thẩm định 98",
-            "folder": TARGET_DIR,
+            "message": f"Đã nhận {len(saved_info)} file vào đúng thư mục: {folder}",
+            "folder": folder,
             "files": saved_info
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lỗi khi ghi file: {str(e)}")
-    
+        raise HTTPException(status_code=500, detail=f"Lỗi khi ghi file vào ổ cứng: {str(e)}")
+
 @router.get("/colleague/files", tags=["Transfer"])
-async def get_uploaded_files():
+async def get_uploaded_files(
+    folder: str = Query(...) # Nhận folder để biết phải lấy danh sách file ở đâu
+):
+    """Lấy danh sách file trong đúng thư mục đang làm việc để hiển thị lên Web"""
     try:
-        if not os.path.exists(TARGET_DIR):
+        target_dir = os.path.join(BASE_PATH, folder)
+        
+        if not os.path.exists(target_dir):
             return []
         
-        files = []
-        for filename in os.listdir(TARGET_DIR):
-            path = os.path.join(TARGET_DIR, filename)
+        files_list = []
+        for filename in os.listdir(target_dir):
+            path = os.path.join(target_dir, filename)
             if os.path.isfile(path):
                 stats = os.stat(path)
-                files.append({
+                files_list.append({
                     "name": filename,
                     "size": round(stats.st_size / (1024 * 1024), 2),
                     "time": stats.st_mtime
                 })
         
-        # Sắp xếp file mới nhất lên đầu để đồng nghiệp dễ thấy
-        files.sort(key=lambda x: x['time'], reverse=True)
-        return files
+        # Sắp xếp file mới nhất lên đầu
+        files_list.sort(key=lambda x: x['time'], reverse=True)
+        return files_list
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Lỗi khi quét thư mục: {str(e)}")

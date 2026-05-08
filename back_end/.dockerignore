@@ -9,3 +9,11 @@
 **/models/
 **/sentence_transformers/
 **/.cache/
+
+.venv
+venv
+env
+__pycache__
+*.pyc
+.git
+.ipynb_checkpoints

@@ -1,0 +1,25 @@
+⚙️ Luồng vận hành của Core2 (Từ Input đến Output)
+Hiếu có thể hình dung luồng đi của một câu truy vấn (ví dụ: "Camera DS-2CD2027G2-LU") như sau:
+
+schemas.py (Cái khung): Định nghĩa đối tượng Candidate (Dữ liệu đầu vào) và EngineResult (Kết quả trả về). Mọi file khác đều phải tuân theo cái khung này để nói chuyện với nhau.
+
+preprocessor.py (Máy nghiền): Nhận câu chữ thô từ người dùng, làm sạch, tách Model/Hãng.
+
+dictionary.py (Từ điển): Tra cứu trong entities.db xem có từ đồng nghĩa không (Ví dụ: Chuyển "Bạc đạn" thành "Vòng bi").
+
+retriever.py (Người đi tìm): Cầm thông tin đã làm sạch vào entities.db để thực hiện lệnh SQL SELECT tìm các sản phẩm giống nhất.
+
+model_scorer.py (Giám khảo AI): Nếu dùng AI, file này sẽ tính điểm Vector (Cosine Similarity) giữa câu hỏi và kết quả tìm được.
+
+validator.py (Gác cổng): So sánh kết quả tìm được với yêu cầu gốc. Nếu sai Hãng hoặc Model, nó sẽ trừ điểm và gắn nhãn lỗi.
+
+engine.py (Nhạc trưởng): File này import tất cả các file trên và điều phối chúng theo đúng thứ tự.
+
+
+Khi Hiếu bắt đầu chỉnh sửa để nạp dữ liệu mới, hãy chú ý 3 "điểm nóng" này:
+
+db.py & entities.db: Đây là cái "kho". Nếu Hiếu thay đổi cấu trúc bảng (thêm/bớt cột) trong init_db.py, Hiếu BẮT BUỘC phải cập nhật lại các câu lệnh SQL trong db.py và retriever.py. Nếu không, code sẽ báo lỗi no such column.
+
+schemas.py: Nếu Hiếu muốn trả về thêm thông tin (ví dụ: thêm cột "Năm nhập" hay "Giá"), Hiếu phải khai báo thêm thuộc tính vào Class trong file này. Nếu không, dữ liệu sẽ bị chặn lại không ra được tới Frontend.
+
+validator.py: File này chứa logic "phạt điểm". Nếu Hiếu đổi cách lưu Model trong DB (ví dụ: lưu model dạng chữ thường hết), thì logic so sánh trong validator.py cũng phải đổi theo để tránh việc nó phạt nhầm vì khác kiểu chữ.

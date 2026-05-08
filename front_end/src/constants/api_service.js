@@ -1,9 +1,18 @@
 // src/api_service.js
 import axios from "axios";
 import { Meilisearch } from "meilisearch"; // Thư viện vừa cài
-const API_BASE = import.meta.env.VITE_API_URL;
+
+// Lấy IP từ thanh địa chỉ trình duyệt (ví dụ: 10.156.42.105 hoặc localhost)
+const currentIP = window.location.hostname;
+
+// Ưu tiên dùng IP hiện tại, nếu không lấy được mới dùng tới biến .env
+const API_BASE = currentIP 
+  ? `http://${currentIP}:8000` 
+  : import.meta.env.VITE_API_URL;
+
+console.log("Backend đang trỏ vào:", API_BASE);
 const API_BASE_URL_MELEI = import.meta.env.VITE_API_BASE_URL_MELEI;
-console.log("Backend đang trỏ vào:", API_BASE); // Dòng này để Hiếu kiểm tra trong F12
+console.log("Backend đang trỏ vào:", API_BASE_URL_MELEI); // Dòng này để Hiếu kiểm tra trong F12
 
 // 1. CẤU HÌNH GỌI THẲNG CỔNG 7700 (Docker Meilisearch)
 const meiliClient = new Meilisearch({
@@ -103,17 +112,22 @@ const api = {
       return { error: error.message };
     }
   },
-  uploadFiles: async (files, onProgress) => {
+  uploadFiles: async (files, folder, onProgress) => { // Thêm tham số folder vào đây
     const formData = new FormData();
-    // Chú ý: Key phải là 'files' để khớp với tham số trong Python: List[UploadFile] = File(...)
+    
+    // 1. Thêm các tệp tin vào FormData
     files.forEach((file) => {
       formData.append("files", file);
     });
 
+    // 2. QUAN TRỌNG: Thêm tên thư mục vào FormData
+    // Backend Python sẽ dùng lệnh folder: str = Form(...) để đọc giá trị này
+    formData.append("folder", folder);
+
     try {
       const response = await apiClient.post("/colleague/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
-        timeout: 0, // KHÔNG GIỚI HẠN thời gian cho file 900MB
+        timeout: 0, // Không giới hạn thời gian cho file 900MB
         onUploadProgress: (progressEvent) => {
           if (onProgress) {
             const percent = Math.round(
@@ -126,13 +140,15 @@ const api = {
       return response.data;
     } catch (error) {
       console.error("Lỗi upload file:", error);
-      throw error; // Quăng lỗi ra ngoài để UI xử lý
+      throw error; 
     }
   },
   // Lấy danh sách file đã có trong folder của Hiếu
-  getUploadedFiles: async () => {
+  getUploadedFiles: async (folder) => {
     try {
-      const response = await apiClient.get("/colleague/files");
+      const response = await apiClient.get("/colleague/files", {
+        params: { folder: folder } // Truyền folder lên để Backend biết quét thư mục nào
+      });
       return response.data;
     } catch (error) {
       console.error("Lỗi lấy danh sách file:", error);
